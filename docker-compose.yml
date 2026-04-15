@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: kbo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: kbo_ai
+      POSTGRES_HOST_AUTH_METHOD: md5
+    command: ["postgres", "-c", "password_encryption=md5"]
+    ports:
+      - "5433:5432"
+    volumes:
+      - kbo_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  kbo_postgres_data:

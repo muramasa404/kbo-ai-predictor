@@ -1,0 +1,415 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1776213309013,
+  "projectRoot": "c:\\Users\\CHJEONG\\Desktop\\KBO",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": "npm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {
+      "dev:web": "npm --workspace apps/web run dev",
+      "build:web": "npm --workspace apps/web run build",
+      "typecheck:worker": "npm --workspace apps/worker run typecheck",
+      "prisma:validate": "npx prisma validate --schema prisma/schema.prisma",
+      "prisma:generate": "npx prisma generate --schema prisma/schema.prisma",
+      "prisma:migrate:dev": "npx prisma migrate dev --schema prisma/schema.prisma",
+      "db:seed": "npm --workspace packages/db run seed"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": true,
+    "workspaces": [
+      "apps/web",
+      "apps/worker",
+      "packages/db"
+    ],
+    "mainDirectories": [
+      "docs"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "analysis": {
+      "path": "analysis",
+      "purpose": null,
+      "fileCount": 10,
+      "lastAccessed": 1776213308954,
+      "keyFiles": [
+        "ml_predictions.json",
+        "model_v2.py",
+        "sb_games.sql",
+        "sb_hitters.sql",
+        "sb_pitchers.sql"
+      ]
+    },
+    "apps": {
+      "path": "apps",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1776213308955,
+      "keyFiles": []
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 0,
+      "lastAccessed": 1776213308963,
+      "keyFiles": []
+    },
+    "KBO_LOGO": {
+      "path": "KBO_LOGO",
+      "purpose": null,
+      "fileCount": 10,
+      "lastAccessed": 1776213308963,
+      "keyFiles": [
+        "DOOSAN_LOGO.png",
+        "HANWHA_LOGO.png",
+        "KIA_LOGO.png",
+        "KIWOOM_LOGO.png",
+        "KT_LOGO.png"
+      ]
+    },
+    "packages": {
+      "path": "packages",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1776213308964,
+      "keyFiles": []
+    },
+    "prisma": {
+      "path": "prisma",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1776213308964,
+      "keyFiles": [
+        "schema.prisma"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "apps\\web\\lib\\db-dashboard.ts",
+      "accessCount": 12,
+      "lastAccessed": 1776145819864,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\upserters\\prisma-pitcher-season.upserter.ts",
+      "accessCount": 9,
+      "lastAccessed": 1776130689006,
+      "type": "file"
+    },
+    {
+      "path": "apps\\web\\app\\page.tsx",
+      "accessCount": 8,
+      "lastAccessed": 1776126567833,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 8,
+      "lastAccessed": 1776130950265,
+      "type": "directory"
+    },
+    {
+      "path": "docker-compose.yml",
+      "accessCount": 7,
+      "lastAccessed": 1776052404829,
+      "type": "file"
+    },
+    {
+      "path": ".env",
+      "accessCount": 6,
+      "lastAccessed": 1776052410235,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\index.ts",
+      "accessCount": 5,
+      "lastAccessed": 1776041788648,
+      "type": "file"
+    },
+    {
+      "path": "test-pg.ts",
+      "accessCount": 5,
+      "lastAccessed": 1776052084299,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\jobs\\run-all-harvest.ts",
+      "accessCount": 5,
+      "lastAccessed": 1776055150552,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\upserters\\prisma-hitter-season.upserter.ts",
+      "accessCount": 5,
+      "lastAccessed": 1776130672830,
+      "type": "file"
+    },
+    {
+      "path": "packages\\db\\src\\client.ts",
+      "accessCount": 5,
+      "lastAccessed": 1776145771687,
+      "type": "file"
+    },
+    {
+      "path": "apps\\web\\lib\\services\\dashboard.ts",
+      "accessCount": 3,
+      "lastAccessed": 1776055302868,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\collectors\\kbo-hitter-season.collector.ts",
+      "accessCount": 3,
+      "lastAccessed": 1776130602662,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\core\\http.ts",
+      "accessCount": 3,
+      "lastAccessed": 1776130645541,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\normalizers\\team.ts",
+      "accessCount": 3,
+      "lastAccessed": 1776130658648,
+      "type": "file"
+    },
+    {
+      "path": "test-db.ts",
+      "accessCount": 2,
+      "lastAccessed": 1776052450233,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\collectors\\kbo-pitcher-season.collector.ts",
+      "accessCount": 2,
+      "lastAccessed": 1776130603152,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\parsers\\html.ts",
+      "accessCount": 2,
+      "lastAccessed": 1776130604568,
+      "type": "file"
+    },
+    {
+      "path": "package.json",
+      "accessCount": 2,
+      "lastAccessed": 1776131630727,
+      "type": "file"
+    },
+    {
+      "path": "README.md",
+      "accessCount": 1,
+      "lastAccessed": 1776037983834,
+      "type": "file"
+    },
+    {
+      "path": "DESIGN.md",
+      "accessCount": 1,
+      "lastAccessed": 1776037984790,
+      "type": "file"
+    },
+    {
+      "path": "KBO_collector_spec.md",
+      "accessCount": 1,
+      "lastAccessed": 1776037986417,
+      "type": "file"
+    },
+    {
+      "path": "KBO_AI_DB_ERD.md",
+      "accessCount": 1,
+      "lastAccessed": 1776037986634,
+      "type": "file"
+    },
+    {
+      "path": "KBO_source_matrix.md",
+      "accessCount": 1,
+      "lastAccessed": 1776037986871,
+      "type": "file"
+    },
+    {
+      "path": "prisma\\schema.prisma",
+      "accessCount": 1,
+      "lastAccessed": 1776037994222,
+      "type": "file"
+    },
+    {
+      "path": "apps\\web\\lib\\mock-data.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776038010018,
+      "type": "file"
+    },
+    {
+      "path": "apps\\web\\app\\api\\dashboard\\route.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776038011863,
+      "type": "file"
+    },
+    {
+      "path": "apps\\web\\app\\api\\predictions\\route.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776038012192,
+      "type": "file"
+    },
+    {
+      "path": "apps\\web\\app\\api\\rankings\\top5\\route.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776038013074,
+      "type": "file"
+    },
+    {
+      "path": "apps\\web\\lib\\contracts.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776038013248,
+      "type": "file"
+    },
+    {
+      "path": "apps\\web\\lib\\services\\kbo-hitter-basic.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776038013706,
+      "type": "file"
+    },
+    {
+      "path": "packages\\db\\src\\seed.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776038014361,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\parsers\\kbo-hitter-season.parser.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776039503944,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\parsers\\kbo-pitcher-season.parser.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776039504130,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\upserters\\hitter-season.upserter.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776039504898,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\services\\hitter-season-harvest.service.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776039505817,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\jobs\\run-kbo-hitter-season-harvest.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776039506191,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\upserters\\pitcher-season.upserter.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776039914353,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\services\\pitcher-season-harvest.service.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776039917275,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\jobs\\run-kbo-pitcher-season-harvest.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776039918631,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\core\\types.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776052483309,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\core\\sources.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776052484231,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\core\\hash.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776052484641,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\core\\dates.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776052485134,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\normalizers\\game-status.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776052486167,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\upserters\\source-snapshot.upserter.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776052493275,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\upserters\\prisma-source-snapshot.upserter.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776052493759,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\upserters\\prisma-team-rank.upserter.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776052494354,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\upserters\\prisma-player-master.upserter.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776052494810,
+      "type": "file"
+    },
+    {
+      "path": "apps\\worker\\src\\jobs\\run-kbo-player-master-harvest.ts",
+      "accessCount": 1,
+      "lastAccessed": 1776052527978,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

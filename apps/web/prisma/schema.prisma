@@ -1,0 +1,552 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LeagueType {
+  KBO
+  FUTURES
+}
+
+enum GameType {
+  REGULAR_SEASON
+  PRESEASON
+  WILD_CARD
+  SEMI_PLAYOFF
+  PLAYOFF
+  KOREA_SERIES
+  ALL_STAR
+  INTERNATIONAL
+}
+
+enum GameStatus {
+  SCHEDULED
+  LIVE
+  FINAL
+  CANCELLED
+  POSTPONED
+  SUSPENDED
+}
+
+enum Handedness {
+  R
+  L
+  S
+  U
+}
+
+enum PlayerRoleType {
+  HITTER
+  STARTING_PITCHER
+  RELIEF_PITCHER
+  TWO_WAY
+}
+
+enum AvailabilityStatus {
+  AVAILABLE
+  PROBABLE
+  LIMITED
+  UNAVAILABLE
+  INACTIVE
+}
+
+enum PitchType {
+  FOUR_SEAM
+  TWO_SEAM
+  SINKER
+  CUTTER
+  SLIDER
+  CURVE
+  CHANGEUP
+  FORK
+  SPLITTER
+  KNUCKLE_CURVE
+  KNUCKLEBALL
+  SWEEPER
+  ETC
+}
+
+model Season {
+  id               String                    @id @default(cuid())
+  year             Int                       @unique
+  leagueType       LeagueType                @default(KBO)
+  startDate        DateTime?
+  endDate          DateTime?
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+  games            Game[]
+  teamRankDailies  TeamRankDaily[]
+  rankingSnapshots RankingSnapshot[]
+  hitterStats      PlayerHitterSeasonStat[]
+  pitcherStats     PlayerPitcherSeasonStat[]
+  pitcherPitchStats PitcherPitchTypeStat[]
+  batterPitchStats BatterPitchTypeStat[]
+  agingMetrics     PlayerAgingMetric[]
+}
+
+model Stadium {
+  id               String   @id @default(cuid())
+  name             String   @unique
+  city             String?
+  domeFlag         Boolean  @default(false)
+  altitudeM        Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  games            Game[]
+  primaryForTeams  Team[]   @relation("TeamPrimaryStadium")
+}
+
+model Team {
+  id                 String                    @id @default(cuid())
+  code               String                    @unique
+  nameKo             String
+  nameEn             String?
+  foundedYear        Int?
+  primaryStadiumId   String?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  primaryStadium     Stadium?                  @relation("TeamPrimaryStadium", fields: [primaryStadiumId], references: [id])
+  players            Player[]
+  homeGames          Game[]                    @relation("HomeTeamGames")
+  awayGames          Game[]                    @relation("AwayTeamGames")
+  rankDailies        TeamRankDaily[]
+  playerGameLogs     PlayerGameLog[]
+  homePredictionFeatures GamePredictionFeature[] @relation("HomeFeatureTeam")
+  awayPredictionFeatures GamePredictionFeature[] @relation("AwayFeatureTeam")
+  rankingSnapshots   RankingSnapshot[]
+}
+
+model Player {
+  id                    String                    @id @default(cuid())
+  sourcePlayerId        String                    @unique
+  currentTeamId         String?
+  nameKo                String
+  nameEn                String?
+  positionPrimary       String?
+  positionSecondary     String?
+  throwsHand            Handedness                @default(U)
+  batsHand              Handedness                @default(U)
+  roleType              PlayerRoleType            @default(HITTER)
+  isActive              Boolean                   @default(true)
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+  currentTeam           Team?                     @relation(fields: [currentTeamId], references: [id])
+  profile               PlayerProfile?
+  gameLogs              PlayerGameLog[]
+  hitterSeasonStats     PlayerHitterSeasonStat[]
+  pitcherSeasonStats    PlayerPitcherSeasonStat[]
+  pitcherPitchTypeStats PitcherPitchTypeStat[]
+  batterPitchTypeStats  BatterPitchTypeStat[]
+  pitcherMatchups       PitcherBatterMatchup[]    @relation("PitcherMatchups")
+  batterMatchups        PitcherBatterMatchup[]    @relation("BatterMatchups")
+  availabilityRecords   PlayerAvailability[]
+  formMetrics           PlayerFormMetric[]
+  agingMetrics          PlayerAgingMetric[]
+  rankingSnapshots      RankingSnapshot[]
+}
+
+model PlayerProfile {
+  id            String   @id @default(cuid())
+  playerId      String   @unique
+  birthDate     DateTime?
+  debutYear     Int?
+  serviceYears  Int?
+  heightCm      Int?
+  weightKg      Int?
+  draftInfo     String?
+  salary        Int?
+  injuryStatus  String?
+  rosterStatus  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  player        Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+}
+
+model Game {
+  id                    String                   @id @default(cuid())
+  sourceGameKey         String                   @unique
+  seasonId              String
+  gameDate              DateTime
+  gameType              GameType
+  homeTeamId            String
+  awayTeamId            String
+  stadiumId             String?
+  scheduledAt           DateTime?
+  status                GameStatus               @default(SCHEDULED)
+  doubleHeaderFlag      Boolean                  @default(false)
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  season                Season                   @relation(fields: [seasonId], references: [id])
+  homeTeam              Team                     @relation("HomeTeamGames", fields: [homeTeamId], references: [id])
+  awayTeam              Team                     @relation("AwayTeamGames", fields: [awayTeamId], references: [id])
+  stadium               Stadium?                 @relation(fields: [stadiumId], references: [id])
+  result                GameResult?
+  broadcasts            GameBroadcast[]
+  playerGameLogs        PlayerGameLog[]
+  predictionFeatures    GamePredictionFeature[]
+  predictions           Prediction[]
+
+  @@index([gameDate, status])
+  @@index([seasonId, gameDate])
+}
+
+model GameResult {
+  id            String   @id @default(cuid())
+  gameId        String   @unique
+  homeScore     Int?
+  awayScore     Int?
+  winnerTeamId  String?
+  loserTeamId   String?
+  isDraw        Boolean  @default(false)
+  endedAt       DateTime?
+  summaryText   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  game          Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+}
+
+model GameBroadcast {
+  id            String   @id @default(cuid())
+  gameId        String
+  channelType   String
+  channelName   String?
+  url           String?
+  createdAt     DateTime @default(now())
+  game          Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([gameId])
+}
+
+model TeamRankDaily {
+  id              String   @id @default(cuid())
+  seasonId        String
+  teamId          String
+  rankDate        DateTime
+  rank            Int
+  games           Int
+  wins            Int
+  losses          Int
+  draws           Int
+  winPct          Decimal  @db.Decimal(6, 3)
+  gamesBack       Decimal? @db.Decimal(6, 2)
+  last10          String?
+  streak          String?
+  homeRecord      String?
+  awayRecord      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  season          Season   @relation(fields: [seasonId], references: [id])
+  team            Team     @relation(fields: [teamId], references: [id])
+
+  @@unique([rankDate, teamId])
+  @@index([seasonId, rankDate])
+}
+
+model RankingSnapshot {
+  id            String   @id @default(cuid())
+  seasonId      String
+  snapshotDate  DateTime
+  category      String
+  groupType     String?
+  rank          Int
+  valueText     String
+  valueDecimal  Decimal? @db.Decimal(10, 3)
+  playerId      String?
+  teamId        String?
+  createdAt     DateTime @default(now())
+  season        Season   @relation(fields: [seasonId], references: [id])
+  player        Player?  @relation(fields: [playerId], references: [id])
+  team          Team?    @relation(fields: [teamId], references: [id])
+
+  @@index([snapshotDate, category])
+  @@index([seasonId, category])
+}
+
+model PlayerGameLog {
+  id               String         @id @default(cuid())
+  gameId           String
+  playerId         String
+  teamId           String
+  opponentTeamId   String?
+  roleType         PlayerRoleType
+  battingOrder     Int?
+  positionPlayed   String?
+  startedFlag      Boolean        @default(false)
+  restDays         Int?
+  minutesEstimate  Int?
+  rawStatsJson     Json?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  game             Game           @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  player           Player         @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  team             Team           @relation(fields: [teamId], references: [id])
+
+  @@unique([gameId, playerId])
+  @@index([playerId, gameId])
+  @@index([teamId, gameId])
+}
+
+model PlayerHitterSeasonStat {
+  id               String   @id @default(cuid())
+  seasonId         String
+  playerId         String
+  teamId           String?
+  games            Int      @default(0)
+  plateAppearances Int      @default(0)
+  atBats           Int      @default(0)
+  runs             Int      @default(0)
+  hits             Int      @default(0)
+  doubles          Int      @default(0)
+  triples          Int      @default(0)
+  homeRuns         Int      @default(0)
+  runsBattedIn     Int      @default(0)
+  walks            Int      @default(0)
+  strikeOuts       Int      @default(0)
+  avg              Decimal? @db.Decimal(6, 3)
+  obp              Decimal? @db.Decimal(6, 3)
+  slg              Decimal? @db.Decimal(6, 3)
+  ops              Decimal? @db.Decimal(6, 3)
+  babip            Decimal? @db.Decimal(6, 3)
+  iso              Decimal? @db.Decimal(6, 3)
+  woba             Decimal? @db.Decimal(6, 3)
+  wrcPlus          Decimal? @db.Decimal(8, 2)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  season           Season   @relation(fields: [seasonId], references: [id])
+  player           Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([seasonId, playerId])
+  @@index([teamId, seasonId])
+}
+
+model PlayerPitcherSeasonStat {
+  id               String   @id @default(cuid())
+  seasonId         String
+  playerId         String
+  teamId           String?
+  games            Int      @default(0)
+  gamesStarted     Int      @default(0)
+  inningsPitched   Decimal? @db.Decimal(8, 2)
+  wins             Int      @default(0)
+  losses           Int      @default(0)
+  saves            Int      @default(0)
+  holds            Int      @default(0)
+  earnedRuns       Int      @default(0)
+  hitsAllowed      Int      @default(0)
+  homeRunsAllowed  Int      @default(0)
+  walks            Int      @default(0)
+  strikeOuts       Int      @default(0)
+  era              Decimal? @db.Decimal(6, 2)
+  fip              Decimal? @db.Decimal(6, 2)
+  xfip             Decimal? @db.Decimal(6, 2)
+  whip             Decimal? @db.Decimal(6, 3)
+  kRate            Decimal? @db.Decimal(6, 3)
+  bbRate           Decimal? @db.Decimal(6, 3)
+  kbRate           Decimal? @db.Decimal(6, 3)
+  gbRate           Decimal? @db.Decimal(6, 3)
+  fbRate           Decimal? @db.Decimal(6, 3)
+  hrPer9           Decimal? @db.Decimal(6, 3)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  season           Season   @relation(fields: [seasonId], references: [id])
+  player           Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([seasonId, playerId])
+  @@index([teamId, seasonId])
+}
+
+model PitcherPitchTypeStat {
+  id                 String    @id @default(cuid())
+  seasonId           String
+  playerId           String
+  pitchType          PitchType
+  usageRate          Decimal?  @db.Decimal(6, 3)
+  averageVelocity    Decimal?  @db.Decimal(6, 2)
+  maxVelocity        Decimal?  @db.Decimal(6, 2)
+  spinRate           Int?
+  movementX          Decimal?  @db.Decimal(8, 3)
+  movementZ          Decimal?  @db.Decimal(8, 3)
+  zoneRate           Decimal?  @db.Decimal(6, 3)
+  whiffRate          Decimal?  @db.Decimal(6, 3)
+  calledStrikeRate   Decimal?  @db.Decimal(6, 3)
+  putawayRate        Decimal?  @db.Decimal(6, 3)
+  avgAllowed         Decimal?  @db.Decimal(6, 3)
+  slgAllowed         Decimal?  @db.Decimal(6, 3)
+  wobaAllowed        Decimal?  @db.Decimal(6, 3)
+  runValue           Decimal?  @db.Decimal(8, 3)
+  winContributionRate Decimal? @db.Decimal(6, 3)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  season             Season    @relation(fields: [seasonId], references: [id])
+  player             Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([seasonId, playerId, pitchType])
+  @@index([playerId, seasonId])
+}
+
+model BatterPitchTypeStat {
+  id               String    @id @default(cuid())
+  seasonId         String
+  playerId         String
+  pitchType        PitchType
+  plateAppearances Int       @default(0)
+  avg              Decimal?  @db.Decimal(6, 3)
+  slg              Decimal?  @db.Decimal(6, 3)
+  whiffRate        Decimal?  @db.Decimal(6, 3)
+  chaseRate        Decimal?  @db.Decimal(6, 3)
+  contactRate      Decimal?  @db.Decimal(6, 3)
+  hardHitRate      Decimal?  @db.Decimal(6, 3)
+  runValue         Decimal?  @db.Decimal(8, 3)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  season           Season    @relation(fields: [seasonId], references: [id])
+  player           Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([seasonId, playerId, pitchType])
+  @@index([playerId, seasonId])
+}
+
+model PitcherBatterMatchup {
+  id                String   @id @default(cuid())
+  pitcherId         String
+  batterId          String
+  seasonScope       Int?
+  careerScopeFlag   Boolean  @default(true)
+  plateAppearances  Int      @default(0)
+  atBats            Int      @default(0)
+  hits              Int      @default(0)
+  homeRuns          Int      @default(0)
+  walks             Int      @default(0)
+  strikeOuts        Int      @default(0)
+  avg               Decimal? @db.Decimal(6, 3)
+  obp               Decimal? @db.Decimal(6, 3)
+  slg               Decimal? @db.Decimal(6, 3)
+  ops               Decimal? @db.Decimal(6, 3)
+  lastSeenDate      DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  pitcher           Player   @relation("PitcherMatchups", fields: [pitcherId], references: [id], onDelete: Cascade)
+  batter            Player   @relation("BatterMatchups", fields: [batterId], references: [id], onDelete: Cascade)
+
+  @@unique([pitcherId, batterId, seasonScope, careerScopeFlag])
+  @@index([pitcherId, batterId])
+}
+
+model PlayerAvailability {
+  id               String             @id @default(cuid())
+  playerId         String
+  gameDate         DateTime
+  availability     AvailabilityStatus
+  sourceType       String
+  reasonText       String?
+  confidenceScore  Decimal?           @db.Decimal(5, 2)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  player           Player             @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([playerId, gameDate])
+}
+
+model PlayerFormMetric {
+  id                String   @id @default(cuid())
+  playerId          String
+  snapshotDate      DateTime
+  recent3gScore     Decimal? @db.Decimal(6, 3)
+  recent7dScore     Decimal? @db.Decimal(6, 3)
+  recent14dScore    Decimal? @db.Decimal(6, 3)
+  fatigueScore      Decimal? @db.Decimal(6, 3)
+  usageScore        Decimal? @db.Decimal(6, 3)
+  trendScore        Decimal? @db.Decimal(6, 3)
+  conditionScore    Decimal? @db.Decimal(6, 3)
+  createdAt         DateTime @default(now())
+  player            Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, snapshotDate])
+  @@index([snapshotDate])
+}
+
+model PlayerAgingMetric {
+  id                   String   @id @default(cuid())
+  seasonId             String
+  playerId             String
+  age                  Int
+  careerYear           Int?
+  agingScore           Decimal? @db.Decimal(6, 3)
+  velocityDeclineScore Decimal? @db.Decimal(6, 3)
+  powerDeclineScore    Decimal? @db.Decimal(6, 3)
+  contactDeclineScore  Decimal? @db.Decimal(6, 3)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  season               Season   @relation(fields: [seasonId], references: [id])
+  player               Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([seasonId, playerId])
+}
+
+model GamePredictionFeature {
+  id                           String   @id @default(cuid())
+  gameId                       String
+  snapshotAt                   DateTime
+  homeTeamId                   String
+  awayTeamId                   String
+  homeRecentWinRate            Decimal? @db.Decimal(6, 3)
+  awayRecentWinRate            Decimal? @db.Decimal(6, 3)
+  homeTeamOps                  Decimal? @db.Decimal(6, 3)
+  awayTeamOps                  Decimal? @db.Decimal(6, 3)
+  homeTeamEra                  Decimal? @db.Decimal(6, 2)
+  awayTeamEra                  Decimal? @db.Decimal(6, 2)
+  homeRestDays                 Int?
+  awayRestDays                 Int?
+  homeRank                     Int?
+  awayRank                     Int?
+  homeAdvantageScore           Decimal? @db.Decimal(6, 3)
+  homeBullpenFatigueScore      Decimal? @db.Decimal(6, 3)
+  awayBullpenFatigueScore      Decimal? @db.Decimal(6, 3)
+  homeCoreHittersFormScore     Decimal? @db.Decimal(6, 3)
+  awayCoreHittersFormScore     Decimal? @db.Decimal(6, 3)
+  homeVsPitchMixAdvantage      Decimal? @db.Decimal(6, 3)
+  awayVsPitchMixAdvantage      Decimal? @db.Decimal(6, 3)
+  homeMatchupEdgeScore         Decimal? @db.Decimal(6, 3)
+  awayMatchupEdgeScore         Decimal? @db.Decimal(6, 3)
+  featurePayload               Json?
+  createdAt                    DateTime @default(now())
+  game                         Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  homeTeam                     Team     @relation("HomeFeatureTeam", fields: [homeTeamId], references: [id])
+  awayTeam                     Team     @relation("AwayFeatureTeam", fields: [awayTeamId], references: [id])
+
+  @@index([gameId, snapshotAt])
+}
+
+model Prediction {
+  id               String   @id @default(cuid())
+  gameId           String
+  modelVersion     String
+  predictedAt      DateTime
+  homeWinProb      Decimal  @db.Decimal(6, 3)
+  awayWinProb      Decimal  @db.Decimal(6, 3)
+  confidenceGrade  String?
+  topReasonsJson   Json?
+  createdAt        DateTime @default(now())
+  game             Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([gameId, predictedAt])
+  @@index([modelVersion, predictedAt])
+}
+
+model SourceSnapshot {
+  id             String   @id @default(cuid())
+  sourceName     String
+  requestUrl     String
+  requestDateKey String?
+  responseStatus Int?
+  contentHash    String?
+  rawBody        String?
+  collectedAt    DateTime @default(now())
+
+  @@index([sourceName, collectedAt])
+  @@index([sourceName, requestDateKey])
+}

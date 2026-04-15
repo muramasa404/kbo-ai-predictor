@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "KBO AI Predictor",
+    "slug": "kbo-ai-predictor",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "scheme": "kbo-ai",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1d1d1f"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.kbo.aipredictor"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1d1d1f"
+      },
+      "package": "com.kbo.aipredictor",
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font"
+    ]
+  }
+}

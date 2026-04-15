@@ -1,0 +1,25 @@
+{
+  "name": "kbo-web",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate --schema prisma/schema.prisma && next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "15.5.15",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "@prisma/client": "6.19.3",
+    "@prisma/adapter-pg": "7.7.0",
+    "pg": "8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.14",
+    "@types/react": "19.0.10",
+    "@types/react-dom": "19.0.4",
+    "prisma": "6.19.3",
+    "typescript": "5.8.3"
+  }
+}

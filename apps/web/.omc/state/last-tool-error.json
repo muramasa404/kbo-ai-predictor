@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"(npx vercel --yes --prod --scope muramasa404s-projects) 2>&1\",\"timeout\":300000,\"description\":\"Deploy with Next.js 15.3.3\"}",
+  "error": "Exit code 1\n<claude-code-hint v=\"1\" type=\"plugin\" value=\"vercel@claude-plugins-official\" />\nRetrieving project…\nDeploying muramasa404s-projects/web\nUploading [--------------------] (0.0B/1.4KB)\nUploading [===========---------] (813.0B/1.4KB)\nUploading [====================] (1.4KB/1.4KB)\nInspect: https://vercel.com/muramasa404s-projects/web/G8D51iuftVTkk2MYmSA1qG2oVWAn [2s]\nProduction: https://web-49c3o3ns3-muramasa404s-projects.vercel.app [2s]\nBuilding...\nBuilding...\nBuilding: Running build in ...",
+  "timestamp": "2026-04-14T05:55:28.736Z",
+  "retry_count": 1
+}

@@ -1,0 +1,25 @@
+{
+  "name": "kbo-platform",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "apps/worker",
+    "packages/db"
+  ],
+  "devDependencies": {
+    "prisma": "^6.19.3"
+  },
+  "scripts": {
+    "dev:web": "npm --workspace apps/web run dev",
+    "build:web": "npm --workspace apps/web run build",
+    "typecheck:worker": "npm --workspace apps/worker run typecheck",
+    "prisma:validate": "npx prisma validate --schema prisma/schema.prisma",
+    "prisma:generate": "npx prisma generate --schema prisma/schema.prisma",
+    "prisma:migrate:dev": "npx prisma migrate dev --schema prisma/schema.prisma",
+    "db:seed": "npm --workspace packages/db run seed"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.7.0",
+    "pg": "^8.20.0"
+  }
+}
