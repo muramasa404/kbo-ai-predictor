@@ -14,7 +14,7 @@ interface PredictedStarter { name: string; era: string; record: string }
 interface TeamOffense { ops: number | null; avg: number | null; hr: number; rbi: number; weightedAb: number; topThreeOps: string[] }
 interface TeamPitching { era: number | null; whip: number | null; kPer9: number | null; weightedIp: number }
 
-const MODEL_VERSION = 'kap_model_v4.2.0'
+const MODEL_VERSION = 'kap_model_v4.3.0'
 
 export async function getDashboardPayloadFromDb(date: string): Promise<FullDashboardPayload | null> {
   const [naverGames, teamRanks, allHitters, allPitchers, latestSnapshot, playerCount] = await Promise.all([
@@ -35,12 +35,26 @@ export async function getDashboardPayloadFromDb(date: string): Promise<FullDashb
 
   if (teamRanks.length === 0 && allHitters.length === 0) return null
 
+  const naverGameIds = naverGames.map((g) => g.gameId)
+  const mlRows = naverGameIds.length > 0
+    ? await prisma.prediction.findMany({
+        where: { game: { sourceGameKey: { in: naverGameIds } } },
+        orderBy: { predictedAt: 'desc' },
+        include: { game: { select: { sourceGameKey: true } } },
+      })
+    : []
+  const mlByGameId = new Map<string, (typeof mlRows)[number]>()
+  for (const row of mlRows) {
+    const key = row.game.sourceGameKey
+    if (!mlByGameId.has(key)) mlByGameId.set(key, row) // latest first due to orderBy
+  }
+
   const rankByTeam = new Map(teamRanks.map((r) => [r.team.nameKo, r]))
   const offenseByTeam = aggregateTeamOffense(allHitters)
   const pitchingByTeam = aggregateTeamPitching(allPitchers)
 
   const predictions = naverGames.map((g) =>
-    buildPrediction(g, rankByTeam, offenseByTeam, pitchingByTeam, allPitchers),
+    buildPrediction(g, rankByTeam, offenseByTeam, pitchingByTeam, allPitchers, mlByGameId.get(g.gameId)),
   )
 
   return {
@@ -104,9 +118,9 @@ export async function getDashboardPayloadFromDb(date: string): Promise<FullDashb
     })),
     modelInfo: {
       version: MODEL_VERSION,
-      description: '다변량 KBO 예측 — 팀 승률, 순위, 최근 10경기, 연속, 선발 투수 ERA/상대전적, 팀 OPS/AVG/ERA/WHIP, 타선 최근 5경기, 상대 전적(h2h), 홈/원정 어드밴티지 조합.',
-      accuracy: '기본값: XGBoost(200 trees, depth 5) 5-fold CV 84.4% + v4.2.0에서 실시간 피처 14개 추가',
-      features: ['승률 차이', '순위 차이', '최근10경기', '연속', '홈 어드밴티지', '선발 ERA', '선발 WHIP', '선발 vs 상대', '팀 ERA', '팀 WHIP', '팀 AVG', '팀 OPS', '팀 HR', '타선 최근5', '핵심타자 폼', '상대전적', '최근 득실차', 'K/9·BB/9', '시리즈 성적'],
+      description: 'XGBoost(200 trees, depth 5) 학습 모델 — GitHub Actions에서 매시간 Supabase 팀/선수 통계로 재학습 후 오늘 Naver KBO 실경기에 predict_proba 추론. 대시보드는 DB에 저장된 ML 확률을 우선 사용하고, Naver에서 가져온 실시간 라이브 피처(핵심타자 최근5경기, 상대전적, 최근 시리즈)를 덧붙여 보여준다.',
+      accuracy: 'XGBoost, 5-fold CV 84%+ (합성 라벨 기반 — 실제 경기결과 라벨 파이프라인은 v5.0.0 예정)',
+      features: ['승률차이', '순위차이', 'last10Pct차이', '연승/연패차이', '홈/원정 승률차이', 'AVG차이', 'OBP차이', 'SLG차이', 'OPS차이', 'ISOP차이', 'BB/K차이', 'HR차이', 'RBI차이', 'ERA차이', 'WHIP차이', 'K/9차이', 'BB/9차이', 'K-BB%차이', 'FIP차이', '피홈런차이', '선발ERA차이', '홈 지표'],
       lastTrained: new Date().toISOString().slice(0, 10),
     },
   }
@@ -170,12 +184,22 @@ function aggregateTeamPitching(pitchers: PitcherRow[]): Map<string, TeamPitching
 
 interface RankRow { rank: number; winPct: unknown; team: { nameKo: string }; wins: number; losses: number; last10: string | null; streak: string | null }
 
+interface MlPredictionRow {
+  modelVersion: string
+  homeWinProb: unknown
+  awayWinProb: unknown
+  confidenceGrade: string | null
+  topReasonsJson: unknown
+  predictedAt: Date
+}
+
 function buildPrediction(
   game: NaverKboGame,
   rankByTeam: Map<string, RankRow>,
   offenseByTeam: Map<string, TeamOffense>,
   pitchingByTeam: Map<string, TeamPitching>,
   allPitchers: PitcherRow[],
+  ml: MlPredictionRow | undefined,
 ) {
   const home = rankByTeam.get(game.homeTeamName)
   const away = rankByTeam.get(game.awayTeamName)
@@ -210,13 +234,23 @@ function buildPrediction(
     homeField + starterEraAdj + starterVsOppAdj + teamEraAdj + teamAvgAdj + teamOpsAdj + teamHrAdj + h2hAdj + formAdj + streakAdj + last10Adj + topHitterAdj,
     -0.30, 0.30,
   )
-  const homeProb = clamp(baseProb + totalAdj, 0.08, 0.92)
+  const ruleHomeProb = clamp(baseProb + totalAdj, 0.08, 0.92)
+
+  // Prefer ML prediction stored by the Python training job (GitHub Actions).
+  // If no ML row exists for this game today, fall back to the rule-based formula.
+  const mlProb = ml ? toNum(ml.homeWinProb) : null
+  const usingMl = mlProb != null && mlProb >= 0.05 && mlProb <= 0.95
+  const homeProb = usingMl ? (mlProb as number) : ruleHomeProb
+  const confidence = usingMl ? (ml?.confidenceGrade ?? confidenceGrade(homeProb)) : confidenceGrade(homeProb)
 
   const winProbability = Math.round(Math.max(homeProb, 1 - homeProb) * 100)
-  const confidence = confidenceGrade(homeProb)
-  const reasons = buildReasons(game, home, away, hPct, aPct, homeStarter, awayStarter, homeOff, awayOff, homePit, awayPit, {
+
+  const ruleReasons = buildReasons(game, home, away, hPct, aPct, homeStarter, awayStarter, homeOff, awayOff, homePit, awayPit, {
     homeField, starterEraAdj, starterVsOppAdj, teamEraAdj, teamAvgAdj, teamOpsAdj, teamHrAdj, h2hAdj, formAdj, streakAdj, last10Adj, topHitterAdj,
   })
+  const reasons = usingMl
+    ? mergeReasons(extractMlReasons(ml!.topReasonsJson), ruleReasons)
+    : ruleReasons
 
   return {
     id: game.gameId,
@@ -230,6 +264,27 @@ function buildPrediction(
     homeStarter,
     awayStarter,
   }
+}
+
+function extractMlReasons(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === 'string')
+  return []
+}
+
+/**
+ * Merge ML-stored reasons with live rule-based reasons. ML reasons come first
+ * (they include [모델], [ML 예측], feature-importance etc.), then rule-based
+ * adds live Naver-enriched context (top 5-game hitter, h2h, series outcome)
+ * that Python doesn't compute. De-duplicate by leading tag.
+ */
+function mergeReasons(mlReasons: string[], ruleReasons: string[]): string[] {
+  if (mlReasons.length === 0) return ruleReasons
+  const seenTags = new Set(mlReasons.map((r) => r.match(/^\[([^\]]+)\]/)?.[1] ?? '').filter(Boolean))
+  const extra = ruleReasons.filter((r) => {
+    const tag = r.match(/^\[([^\]]+)\]/)?.[1]
+    return tag && !seenTags.has(tag)
+  })
+  return [...mlReasons, ...extra]
 }
 
 interface Adjustments {

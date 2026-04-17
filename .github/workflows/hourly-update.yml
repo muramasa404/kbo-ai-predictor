@@ -40,7 +40,7 @@ jobs:
         run: npm install -g tsx
 
       - name: Install Python dependencies
-        run: pip install xgboost scikit-learn numpy
+        run: pip install xgboost scikit-learn numpy psycopg2-binary
 
       - name: Generate Prisma Client
         run: npx prisma generate --schema prisma/schema.prisma
@@ -51,13 +51,10 @@ jobs:
       - name: Collect Extended Stats
         run: tsx apps/worker/src/jobs/run-extended-harvest.ts || echo "Extended harvest failed, continuing..."
 
-      - name: Train ML Model
+      - name: Train ML Model + write today's predictions to Supabase
         env:
           PYTHONIOENCODING: utf-8
-        run: python analysis/train_model.py || echo "Training failed, continuing..."
-
-      - name: Save ML Predictions to DB
-        run: tsx apps/worker/src/jobs/run-ml-predictions.ts || echo "ML predictions failed, continuing..."
+        run: python analysis/train_model.py || echo "ML training/inference failed, continuing..."
 
       - name: Trigger Vercel Cron Update
         run: |
