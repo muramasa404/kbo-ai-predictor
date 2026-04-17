@@ -1,6 +1,6 @@
 """
 KBO AI Predictor — Real ML Model Training
-kap_model_v4.0.0: XGBoost + RandomForest Ensemble
+kap_model_v4.1.0: XGBoost + RandomForest Ensemble
 
 Features (25+):
   Team: winPct, rank, last10Pct, streak, homePct, awayPct
@@ -381,7 +381,7 @@ for home, away in matchups:
 output_path = 'analysis/ml_predictions.json'
 with open(output_path, 'w', encoding='utf-8') as f:
     json.dump({
-        'modelVersion': 'kap_model_v4.0.0',
+        'modelVersion': 'kap_model_v4.1.0',
         'modelType': 'XGBoost',
         'features': feature_names,
         'featureCount': len(feature_names),
@@ -392,4 +392,4 @@ with open(output_path, 'w', encoding='utf-8') as f:
     }, f, ensure_ascii=False, indent=2)
 
 print(f"\n\nModel exported to {output_path}")
-print(f"Model: kap_model_v4.0.0 (XGBoost, {len(feature_names)} features, {len(X)} samples)")
+print(f"Model: kap_model_v4.1.0 (XGBoost, {len(feature_names)} features, {len(X)} samples)")

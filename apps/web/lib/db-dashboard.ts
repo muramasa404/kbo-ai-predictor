@@ -49,7 +49,7 @@ export async function getDashboardPayloadFromDb(date: string): Promise<FullDashb
     },
     predictions,
     analyticsMetrics: [
-      { label: '오늘 경기', value: String(naverGames.length), tone: 'positive' as const, delta: 'kap_model_v4.0.1' },
+      { label: '오늘 경기', value: String(naverGames.length), tone: 'positive' as const, delta: 'kap_model_v4.1.0' },
       { label: '등록 선수', value: String(playerCount), tone: 'positive' as const },
       { label: '수집 팀', value: `${teamRanks.length}팀`, tone: 'positive' as const },
     ],
@@ -96,7 +96,7 @@ export async function getDashboardPayloadFromDb(date: string): Promise<FullDashb
       whip: p.whip ? String(p.whip) : '-',
     })),
     modelInfo: {
-      version: 'kap_model_v4.0.1',
+      version: 'kap_model_v4.1.0',
       description: 'XGBoost ML 모델 — 22개 피처 학습, 5-fold CV 84.4% 정확도. Naver 실시간 일정·선발 + KBO 시즌 누적 기록 기반.',
       accuracy: 'XGBoost (200 trees, depth 5) — 900개 학습 샘플, Brier Score 0.119',
       features: ['승률 차이', '순위 차이', '최근10경기', '연승/연패', '홈/원정', 'AVG', 'OBP', 'SLG', 'OPS', 'ISOP', 'BB/K', 'HR', 'RBI', 'ERA', 'WHIP', 'K/9', 'BB/9', 'K-BB%', 'FIP', '피홈런', '선발ERA', '홈 어드밴티지'],
