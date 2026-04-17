@@ -1,5 +1,11 @@
 /** API 응답 타입 정의 — any 제거 */
 
+export interface Starter {
+  name: string
+  era: string
+  record: string
+}
+
 export interface Prediction {
   id: string
   gameTime: string
@@ -9,6 +15,8 @@ export interface Prediction {
   winProbability: number
   confidence: string
   topReasons: string[]
+  homeStarter?: Starter | null
+  awayStarter?: Starter | null
 }
 
 export interface TeamRank {

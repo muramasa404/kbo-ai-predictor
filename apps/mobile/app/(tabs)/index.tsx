@@ -136,11 +136,23 @@ function MatchCard({ prediction: p, today, expanded, onToggle, index }: {
         <View style={s.teamCol}>
           <Image source={getTeamLogo(p.awayTeam)} style={s.logo} resizeMode="contain" accessibilityLabel={p.awayTeam} />
           <Text style={s.teamName}>{p.awayTeam}</Text>
+          {p.awayStarter && (
+            <View style={s.starterRow}>
+              <MaterialIcons name="sports-baseball" size={10} color={colors.blue} />
+              <Text style={s.starterText} numberOfLines={1}>{p.awayStarter.name} · {p.awayStarter.era}</Text>
+            </View>
+          )}
         </View>
         <View style={s.vsBox}><Text style={s.vsText}>VS</Text></View>
         <View style={s.teamCol}>
           <Image source={getTeamLogo(p.homeTeam)} style={s.logo} resizeMode="contain" accessibilityLabel={p.homeTeam} />
           <Text style={s.teamName}>{p.homeTeam}</Text>
+          {p.homeStarter && (
+            <View style={s.starterRow}>
+              <MaterialIcons name="sports-baseball" size={10} color={colors.blue} />
+              <Text style={s.starterText} numberOfLines={1}>{p.homeStarter.name} · {p.homeStarter.era}</Text>
+            </View>
+          )}
         </View>
       </View>
 
@@ -207,9 +219,11 @@ const s = StyleSheet.create({
   dateRow: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingBottom: 10, marginBottom: 12, borderBottomWidth: 0.5, borderBottomColor: colors.border },
   dateText: { fontSize: 11, color: colors.text3, fontFamily: 'NotoSansKR_500Medium' },
   teams: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  teamCol: { alignItems: 'center', width: 90, gap: 6 },
+  teamCol: { alignItems: 'center', width: 100, gap: 4 },
   logo: { width: 48, height: 48 },
   teamName: { fontSize: 15, fontFamily: 'NotoSansKR_700Bold', color: colors.text1 },
+  starterRow: { flexDirection: 'row', alignItems: 'center', gap: 3, maxWidth: 100, paddingHorizontal: 2 },
+  starterText: { flex: 1, fontSize: 10, fontFamily: 'NotoSansKR_500Medium', color: colors.text3, letterSpacing: -0.2 },
   vsBox: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, backgroundColor: 'rgba(0,0,0,0.04)' },
   vsText: { fontSize: 13, fontFamily: 'NotoSansKR_700Bold', color: colors.text3 },
 
