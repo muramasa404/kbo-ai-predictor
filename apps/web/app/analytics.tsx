@@ -1,41 +1,42 @@
 'use client'
 
-import Script from 'next/script'
+import { useEffect } from 'react'
 
 const GA_ID = process.env.NEXT_PUBLIC_GA_ID ?? ''
 const NAVER_ID = process.env.NEXT_PUBLIC_NAVER_ANALYTICS_ID ?? ''
 
 export function Analytics() {
-  return (
-    <>
-      {/* Google Analytics 4 */}
-      {GA_ID && (
-        <>
-          <Script src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} strategy="afterInteractive" />
-          <Script id="ga4" strategy="afterInteractive">
-            {`
-              window.dataLayer = window.dataLayer || [];
-              function gtag(){dataLayer.push(arguments);}
-              gtag('js', new Date());
-              gtag('config', '${GA_ID}');
-            `}
-          </Script>
-        </>
-      )}
+  useEffect(() => {
+    if (GA_ID) loadGoogleAnalytics(GA_ID)
+    if (NAVER_ID) loadNaverAnalytics(NAVER_ID)
+  }, [])
+  return null
+}
 
-      {/* Naver Analytics */}
-      {NAVER_ID && (
-        <Script id="naver-analytics" strategy="afterInteractive">
-          {`
-            if(!wcs_add) var wcs_add = {};
-            wcs_add["wa"] = "${NAVER_ID}";
-            if(window.wcs) { wcs_do(); }
-          `}
-        </Script>
-      )}
-      {NAVER_ID && (
-        <Script src="https://wcs.naver.net/wcslog.js" strategy="afterInteractive" />
-      )}
-    </>
-  )
+function loadGoogleAnalytics(id: string) {
+  if (document.getElementById('ga4-src')) return
+  const tag = document.createElement('script')
+  tag.id = 'ga4-src'
+  tag.async = true
+  tag.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(id)}`
+  document.head.appendChild(tag)
+
+  const w = window as unknown as { dataLayer: unknown[]; gtag: (...args: unknown[]) => void }
+  w.dataLayer = w.dataLayer || []
+  w.gtag = function gtag(...args: unknown[]) { w.dataLayer.push(args) }
+  w.gtag('js', new Date())
+  w.gtag('config', id)
+}
+
+function loadNaverAnalytics(id: string) {
+  if (document.getElementById('naver-wa-src')) return
+  const w = window as unknown as { wcs_add?: Record<string, string>; wcs?: { inflow: (arg: string) => void }; wcs_do?: () => void }
+  w.wcs_add = w.wcs_add ?? {}
+  w.wcs_add.wa = id
+  const tag = document.createElement('script')
+  tag.id = 'naver-wa-src'
+  tag.async = true
+  tag.src = 'https://wcs.naver.net/wcslog.js'
+  tag.onload = () => { if (w.wcs_do) w.wcs_do() }
+  document.head.appendChild(tag)
 }
