@@ -7,6 +7,8 @@ export interface PredictionCardData {
   winProbability: number
   confidence: string
   topReasons: string[]
+  homeStarter?: { name: string; era: string; record: string } | null
+  awayStarter?: { name: string; era: string; record: string } | null
 }
 
 export interface MetricCardData {

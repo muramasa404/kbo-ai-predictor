@@ -18,7 +18,7 @@ type Tab = 'home' | 'rank' | 'stats' | 'system'
 interface DashboardData {
   date?: string
   hero: { title: string; copy: string; chips: string[] }
-  predictions: Array<{ id: string; gameTime: string; homeTeam: string; awayTeam: string; favoredTeam: string; winProbability: number; confidence: string; topReasons: string[] }>
+  predictions: Array<{ id: string; gameTime: string; homeTeam: string; awayTeam: string; favoredTeam: string; winProbability: number; confidence: string; topReasons: string[]; homeStarter?: { name: string; era: string; record: string } | null; awayStarter?: { name: string; era: string; record: string } | null }>
   teamRanks: Array<{ rank: number; teamName: string; wins: number; losses: number; draws: number; winPct: string; gamesBack: string; last10: string; streak: string }>
   allHitters: Array<{ rank: number; playerName: string; teamName: string; avg: string; games: number; hits: number; homeRuns: number; rbi: number }>
   allPitchers: Array<{ rank: number; playerName: string; teamName: string; era: string; games: number; wins: number; losses: number; strikeOuts: number; whip: string }>
@@ -126,43 +126,7 @@ function HomeTab({ data }: { data: DashboardData }) {
       {/* Predictions — the primary content */}
       <section className="section-m">
         {data.predictions.map((p, i) => (
-          <article key={p.id} className="match-card slide-up" style={{ animationDelay: `${i * 60}ms` }}>
-            {/* Date + Time header */}
-            <div className="match-date-row">
-              <span className="material-icons-round match-date-icon">schedule</span>
-              <span className="match-date-text">{TODAY} {p.gameTime}</span>
-            </div>
-
-            <div className="match-teams">
-              <div className="match-team">
-                <img src={getTeamLogo(p.awayTeam)} alt={p.awayTeam} className="logo-m" onError={hideImg} />
-                <span className="team-label">{p.awayTeam}</span>
-              </div>
-              <div className="match-center">
-                <span className="match-vs-label">VS</span>
-              </div>
-              <div className="match-team">
-                <img src={getTeamLogo(p.homeTeam)} alt={p.homeTeam} className="logo-m" onError={hideImg} />
-                <span className="team-label">{p.homeTeam}</span>
-              </div>
-            </div>
-
-            <div className="prob-section">
-              <div className="prob-bars">
-                <div className="prob-away-bar" style={{ width: `${100 - p.winProbability}%`, background: getTeamColor(p.awayTeam) }} />
-                <div className="prob-home-bar" style={{ width: `${p.winProbability}%`, background: getTeamColor(p.homeTeam) }} />
-              </div>
-              <div className="prob-row">
-                <span className="prob-pct">{100 - p.winProbability}%</span>
-                <span className="conf-pill">{p.confidence}</span>
-                <span className="prob-pct">{p.winProbability}%</span>
-              </div>
-            </div>
-
-            <ul className="reasons">
-              {p.topReasons.map((r) => <li key={r}>{r}</li>)}
-            </ul>
-          </article>
+          <MatchCard key={p.id} p={p} index={i} />
         ))}
       </section>
 
@@ -188,6 +152,70 @@ function HomeTab({ data }: { data: DashboardData }) {
         </section>
       )}
     </div>
+  )
+}
+
+/* ═══════════════════════════════════════ */
+/* MATCH CARD with collapsible AI 결과     */
+/* ═══════════════════════════════════════ */
+function MatchCard({ p, index }: { p: DashboardData['predictions'][number]; index: number }) {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <article className="match-card slide-up" style={{ animationDelay: `${index * 60}ms` }}>
+      <div className="match-date-row">
+        <span className="material-icons-round match-date-icon">schedule</span>
+        <span className="match-date-text">{TODAY} {p.gameTime}</span>
+      </div>
+
+      <div className="match-teams">
+        <div className="match-team">
+          <img src={getTeamLogo(p.awayTeam)} alt={p.awayTeam} className="logo-m" onError={hideImg} />
+          <span className="team-label">{p.awayTeam}</span>
+          {p.awayStarter && (
+            <span className="starter-label">
+              <span className="material-icons-round starter-icon">sports_baseball</span>
+              {p.awayStarter.name} · {p.awayStarter.era}
+            </span>
+          )}
+        </div>
+        <div className="match-center">
+          <span className="match-vs-label">VS</span>
+        </div>
+        <div className="match-team">
+          <img src={getTeamLogo(p.homeTeam)} alt={p.homeTeam} className="logo-m" onError={hideImg} />
+          <span className="team-label">{p.homeTeam}</span>
+          {p.homeStarter && (
+            <span className="starter-label">
+              <span className="material-icons-round starter-icon">sports_baseball</span>
+              {p.homeStarter.name} · {p.homeStarter.era}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="prob-section">
+        <div className="prob-bars">
+          <div className="prob-away-bar" style={{ width: `${100 - p.winProbability}%`, background: getTeamColor(p.awayTeam) }} />
+          <div className="prob-home-bar" style={{ width: `${p.winProbability}%`, background: getTeamColor(p.homeTeam) }} />
+        </div>
+        <div className="prob-row">
+          <span className="prob-pct">{100 - p.winProbability}%</span>
+          <span className="conf-pill">{p.confidence}</span>
+          <span className="prob-pct">{p.winProbability}%</span>
+        </div>
+      </div>
+
+      <button type="button" className="ai-toggle" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
+        <span className="material-icons-round ai-toggle-spark">auto_awesome</span>
+        <span className="ai-toggle-label">AI 결과</span>
+        <span className="material-icons-round ai-toggle-arrow">{expanded ? 'expand_less' : 'expand_more'}</span>
+      </button>
+      {expanded && (
+        <ul className="reasons">
+          {p.topReasons.map((r) => <li key={r}>{r}</li>)}
+        </ul>
+      )}
+    </article>
   )
 }
 

@@ -8,6 +8,8 @@ export interface FullDashboardPayload extends DashboardPayload {
   modelInfo: { version: string; description: string; accuracy: string; features: string[]; lastTrained: string }
 }
 
+interface PredictedStarter { name: string; era: string; record: string }
+
 export async function getDashboardPayloadFromDb(date: string): Promise<FullDashboardPayload | null> {
   const [predictions, teamRanks, allHitters, allPitchers, latestSnapshot, playerCount] = await Promise.all([
     prisma.prediction.findMany({
@@ -57,6 +59,8 @@ export async function getDashboardPayloadFromDb(date: string): Promise<FullDashb
         winProbability: Math.round(Math.max(homeProb, awayProb) * 100),
         confidence: p.confidenceGrade ?? '보통',
         topReasons: extractReasons(p.topReasonsJson),
+        homeStarter: pickStarter(allPitchers, p.game.homeTeam.nameKo),
+        awayStarter: pickStarter(allPitchers, p.game.awayTeam.nameKo),
       }
     }),
     analyticsMetrics: [
@@ -119,6 +123,25 @@ export async function getDashboardPayloadFromDb(date: string): Promise<FullDashb
 function extractReasons(value: unknown): string[] {
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string')
   return ['예측 근거 준비 중']
+}
+
+interface PitcherLike {
+  era: unknown
+  games: number
+  wins: number
+  losses: number
+  player: { nameKo: string; currentTeam: { nameKo: string } | null }
+}
+
+function pickStarter(pitchers: PitcherLike[], teamName: string): PredictedStarter | null {
+  const teamPitchers = pitchers.filter((p) => p.player.currentTeam?.nameKo === teamName && p.era != null && p.games >= 5)
+  if (teamPitchers.length === 0) return null
+  const top = teamPitchers.sort((a, b) => Number(a.era) - Number(b.era))[0]
+  return {
+    name: top.player.nameKo,
+    era: top.era ? Number(top.era).toFixed(2) : '-',
+    record: `${top.wins}승 ${top.losses}패`,
+  }
 }
 
 function formatTime(value: Date): string {
