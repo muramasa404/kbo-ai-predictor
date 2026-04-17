@@ -2,11 +2,11 @@ name: KBO Hourly Data Update
 
 on:
   schedule:
-    # 매 1시간마다 실행 (KST 기준 매시 정각)
     - cron: '0 * * * *'
-  workflow_dispatch: # 수동 실행 가능
+  workflow_dispatch:
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   DB_HOST: aws-1-ap-northeast-2.pooler.supabase.com
   DB_PORT: 6543
   DB_USER: kbo_app.fxdbpwxryismutubvfwj
@@ -17,7 +17,7 @@ env:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -33,11 +33,11 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install Node dependencies
-        run: |
-          npm install --prefix apps/worker
-          npm install --prefix packages/db
-          npm install -g tsx
+      - name: Install workspace dependencies
+        run: npm install --workspaces --include-workspace-root --no-audit --no-fund
+
+      - name: Install tsx globally
+        run: npm install -g tsx
 
       - name: Install Python dependencies
         run: pip install xgboost scikit-learn numpy
@@ -46,31 +46,24 @@ jobs:
         run: npx prisma generate --schema prisma/schema.prisma
 
       - name: Collect KBO Data
-        run: |
-          echo "=== Collecting KBO Stats ==="
-          tsx apps/worker/src/jobs/run-all-harvest.ts || echo "Harvest failed, continuing..."
+        run: tsx apps/worker/src/jobs/run-all-harvest.ts || echo "Harvest failed, continuing..."
 
       - name: Collect Extended Stats
-        run: |
-          echo "=== Collecting Extended Stats ==="
-          tsx apps/worker/src/jobs/run-extended-harvest.ts || echo "Extended harvest failed, continuing..."
+        run: tsx apps/worker/src/jobs/run-extended-harvest.ts || echo "Extended harvest failed, continuing..."
 
       - name: Train ML Model
-        run: |
-          echo "=== Training ML Model ==="
-          PYTHONIOENCODING=utf-8 python analysis/train_model.py || echo "Training failed, continuing..."
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python analysis/train_model.py || echo "Training failed, continuing..."
 
       - name: Save ML Predictions to DB
-        run: |
-          echo "=== Saving Predictions ==="
-          tsx apps/worker/src/jobs/run-ml-predictions.ts || echo "ML predictions failed, continuing..."
+        run: tsx apps/worker/src/jobs/run-ml-predictions.ts || echo "ML predictions failed, continuing..."
 
       - name: Trigger Vercel Cron Update
         run: |
-          echo "=== Triggering Vercel Prediction Refresh ==="
           curl -s -m 30 -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             https://web-muramasa404s-projects.vercel.app/api/cron/update \
             || echo "Vercel cron trigger failed"
 
       - name: Summary
-        run: echo "✅ Hourly update completed at $(date -u '+%Y-%m-%d %H:%M UTC')"
+        run: echo "Hourly update completed at $(date -u '+%Y-%m-%d %H:%M UTC')"
