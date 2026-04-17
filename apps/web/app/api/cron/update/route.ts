@@ -97,7 +97,7 @@ export async function GET(request: Request) {
         data: {
           id: crypto.randomUUID(),
           gameId: game.id,
-          modelVersion: 'kap_model_v4.1.0',
+          modelVersion: 'kap_model_v4.2.0',
           predictedAt: new Date(),
           homeWinProb: homeProb,
           awayWinProb: 1 - homeProb,
