@@ -14,7 +14,7 @@ interface PredictedStarter { name: string; era: string; record: string }
 interface TeamOffense { ops: number | null; avg: number | null; hr: number; rbi: number; weightedAb: number; topThreeOps: string[] }
 interface TeamPitching { era: number | null; whip: number | null; kPer9: number | null; weightedIp: number }
 
-const MODEL_VERSION = 'kap_model_v4.3.0'
+const MODEL_VERSION = 'kap_model_v5.0.0'
 
 export async function getDashboardPayloadFromDb(date: string): Promise<FullDashboardPayload | null> {
   const [naverGames, teamRanks, allHitters, allPitchers, latestSnapshot, playerCount] = await Promise.all([
@@ -118,8 +118,8 @@ export async function getDashboardPayloadFromDb(date: string): Promise<FullDashb
     })),
     modelInfo: {
       version: MODEL_VERSION,
-      description: 'XGBoost(200 trees, depth 5) 학습 모델 — GitHub Actions에서 매시간 Supabase 팀/선수 통계로 재학습 후 오늘 Naver KBO 실경기에 predict_proba 추론. 대시보드는 DB에 저장된 ML 확률을 우선 사용하고, Naver에서 가져온 실시간 라이브 피처(핵심타자 최근5경기, 상대전적, 최근 시리즈)를 덧붙여 보여준다.',
-      accuracy: 'XGBoost, 5-fold CV 84%+ (합성 라벨 기반 — 실제 경기결과 라벨 파이프라인은 v5.0.0 예정)',
+      description: 'XGBoost(200 trees, depth 5) — 매시간 GitHub Actions가 Naver에서 2025~2026 KBO 완료경기 결과를 수집해 Supabase에 적재하고, 실제 경기 W/L 라벨로 재학습합니다. 오늘 경기는 Naver 실시간 일정 + 발표된 선발투수 ERA를 피처에 반영해 predict_proba 추론합니다.',
+      accuracy: 'v5.0.0: 실제 경기결과 라벨로 학습 (KBO 예측 현실 상한 ~55-60%). 합성 라벨 fallback은 실제 샘플 <50일 때만 가동.',
       features: ['승률차이', '순위차이', 'last10Pct차이', '연승/연패차이', '홈/원정 승률차이', 'AVG차이', 'OBP차이', 'SLG차이', 'OPS차이', 'ISOP차이', 'BB/K차이', 'HR차이', 'RBI차이', 'ERA차이', 'WHIP차이', 'K/9차이', 'BB/9차이', 'K-BB%차이', 'FIP차이', '피홈런차이', '선발ERA차이', '홈 지표'],
       lastTrained: new Date().toISOString().slice(0, 10),
     },

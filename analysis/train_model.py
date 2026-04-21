@@ -1,16 +1,28 @@
 """
 KBO AI Predictor — ML training + live inference
-kap_model_v4.3.0: XGBoost trained on team/player features, applied to today's
-real Naver KBO schedule + announced starters, written directly to Supabase.
+kap_model_v5.0.0: XGBoost trained on REAL KBO game outcomes (no more
+synthetic labels), applied to today's Naver schedule + announced starters,
+written directly to Supabase.
 
 Flow:
   1. Connect to Supabase via DATABASE_URL (psycopg2).
-  2. Query team rank, hitter season stats, pitcher season stats.
-  3. Build per-team feature dict (winPct, rank, OPS, ERA, WHIP, K/9, BB/9, etc).
-  4. Train XGBoost (synthetic labels from current standings — acknowledged proxy).
-  5. Fetch today's KBO games from Naver Sports API + announced starters.
-  6. For each game, build 22-feature vector, run final_model.predict_proba.
-  7. Upsert Game row (sourceGameKey = Naver gameId) + INSERT Prediction row.
+  2. Collect past KBO game results from Naver (2025-2026 seasons).
+     Upsert Game + GameResult rows with real scores.
+  3. Query team rank, hitter season stats, pitcher season stats.
+  4. Build per-team feature dict (OPS/AVG/ERA/WHIP/K9/BB9/FIP).
+  5. Load training data: all Games with GameResult.
+     Label = 1 if home won, 0 otherwise.
+     Feature = team-strength diff vector (current-season proxy).
+  6. Train XGBoost on REAL labels (fall back to synthetic only if <50 games).
+  7. Fetch today's KBO games + announced starters from Naver.
+  8. For each game, build feature vector + predict_proba.
+  9. Upsert Game (sourceGameKey = Naver gameId) + INSERT Prediction.
+
+Limitations documented in description:
+  - Features use CURRENT-season stats as a proxy for state-at-game-time.
+    Pure retroactive features require per-date snapshots; those will
+    arrive when backfill-naver-schedule.ts is run against DailyTeamRank
+    history.
 """
 from __future__ import annotations
 import json
@@ -28,9 +40,10 @@ import xgboost as xgb
 from psycopg2.extras import Json
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.metrics import accuracy_score, brier_score_loss
+from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
 
-MODEL_VERSION = 'kap_model_v4.3.0'
+MODEL_VERSION = 'kap_model_v5.0.0'
 KST = timezone(timedelta(hours=9))
 TODAY_KST = datetime.now(KST).strftime('%Y-%m-%d')
 DATABASE_URL = os.environ.get('DATABASE_URL')
@@ -38,13 +51,15 @@ if not DATABASE_URL:
     print('ERROR: DATABASE_URL environment variable not set', file=sys.stderr)
     sys.exit(1)
 
+HISTORY_YEARS = [2025, 2026]  # seasons to collect results from
+
 
 def gen_id() -> str:
     return 'p' + uuid.uuid4().hex[:24]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Naver KBO live fetchers
+# Naver KBO fetchers
 # ═══════════════════════════════════════════════════════════════════════════════
 NAVER_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36',
@@ -53,19 +68,19 @@ NAVER_HEADERS = {
 }
 
 
-def naver_fetch_json(url: str, timeout: int = 10) -> dict:
+def naver_fetch_json(url: str, timeout: int = 15) -> dict:
     req = urllib.request.Request(url, headers=NAVER_HEADERS)
     ctx = ssl.create_default_context()
     with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
         return json.loads(resp.read().decode('utf-8'))
 
 
-def fetch_naver_today_games(date: str) -> list[dict]:
-    url = f'https://api-gw.sports.naver.com/schedule/games?fields=basic&upperCategoryId=kbaseball&fromDate={date}&toDate={date}'
+def fetch_naver_range(from_date: str, to_date: str) -> list[dict]:
+    url = f'https://api-gw.sports.naver.com/schedule/games?fields=basic&upperCategoryId=kbaseball&fromDate={from_date}&toDate={to_date}'
     try:
         data = naver_fetch_json(url)
     except Exception as e:
-        print(f'[naver] schedule fetch failed: {e}')
+        print(f'  [naver] range fetch failed ({from_date}~{to_date}): {e}')
         return []
     games = data.get('result', {}).get('games', [])
     return [g for g in games if g.get('categoryId') == 'kbo']
@@ -74,7 +89,7 @@ def fetch_naver_today_games(date: str) -> list[dict]:
 def fetch_naver_preview(game_id: str) -> dict:
     url = f'https://api-gw.sports.naver.com/schedule/games/{game_id}/preview'
     try:
-        data = naver_fetch_json(url)
+        data = naver_fetch_json(url, timeout=10)
         return data.get('result', {}).get('previewData', {}) or {}
     except Exception:
         return {}
@@ -95,7 +110,96 @@ def parse_starter(starter: dict | None) -> dict | None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# DB — build team feature dict from Supabase
+# DB helpers
+# ═══════════════════════════════════════════════════════════════════════════════
+def ensure_season(cur, year: int) -> str:
+    cur.execute('SELECT id FROM "Season" WHERE year = %s', (year,))
+    row = cur.fetchone()
+    if row:
+        return row[0]
+    sid = gen_id()
+    cur.execute(
+        '''INSERT INTO "Season" (id, year, "leagueType", "startDate", "endDate", "createdAt", "updatedAt")
+           VALUES (%s, %s, 'KBO', %s, %s, NOW(), NOW())
+           ON CONFLICT (year) DO UPDATE SET "updatedAt" = NOW()
+           RETURNING id''',
+        (sid, year, f'{year}-03-01', f'{year}-11-30'),
+    )
+    return cur.fetchone()[0]
+
+
+def collect_historical_games(cur, team_id_by_name: dict[str, str]) -> int:
+    """Iterate past dates for each configured season, upsert Game + GameResult
+    for every completed KBO game Naver has a result for."""
+    total_written = 0
+    today_date = datetime.now(KST).date()
+
+    for year in HISTORY_YEARS:
+        season_id = ensure_season(cur, year)
+        # KBO regular season typically runs April → October
+        year_start = datetime(year, 3, 15).date()
+        year_end = min(datetime(year, 11, 15).date(), today_date)
+        if year_start > today_date:
+            continue
+
+        cursor_date = year_start
+        step = timedelta(days=14)  # 2-week chunks
+        while cursor_date <= year_end:
+            chunk_end = min(cursor_date + step - timedelta(days=1), year_end)
+            games = fetch_naver_range(cursor_date.strftime('%Y-%m-%d'), chunk_end.strftime('%Y-%m-%d'))
+
+            for g in games:
+                if g.get('statusCode') != 'RESULT':
+                    continue  # skip not-completed games
+                home_name = g.get('homeTeamName')
+                away_name = g.get('awayTeamName')
+                if home_name not in team_id_by_name or away_name not in team_id_by_name:
+                    continue
+                h_score = g.get('homeTeamScore')
+                a_score = g.get('awayTeamScore')
+                if h_score is None or a_score is None:
+                    continue
+                # Upsert Game
+                scheduled_at = g.get('gameDateTime')
+                cur.execute(
+                    '''INSERT INTO "Game" (id, "sourceGameKey", "seasonId", "gameDate", "gameType",
+                                          "homeTeamId", "awayTeamId", "scheduledAt", status, "updatedAt")
+                       VALUES (%s, %s, %s, %s, 'REGULAR_SEASON', %s, %s, %s, 'FINAL', NOW())
+                       ON CONFLICT ("sourceGameKey") DO UPDATE SET
+                           status = 'FINAL', "updatedAt" = NOW()
+                       RETURNING id''',
+                    (gen_id(), g['gameId'], season_id, g.get('gameDate'),
+                     team_id_by_name[home_name], team_id_by_name[away_name], scheduled_at),
+                )
+                db_game_id = cur.fetchone()[0]
+
+                is_draw = int(h_score) == int(a_score)
+                winner = None if is_draw else (team_id_by_name[home_name] if int(h_score) > int(a_score) else team_id_by_name[away_name])
+                loser = None if is_draw else (team_id_by_name[away_name] if int(h_score) > int(a_score) else team_id_by_name[home_name])
+
+                cur.execute(
+                    '''INSERT INTO "GameResult" (id, "gameId", "homeScore", "awayScore",
+                                                 "winnerTeamId", "loserTeamId", "isDraw", "endedAt", "updatedAt")
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                       ON CONFLICT ("gameId") DO UPDATE SET
+                           "homeScore" = EXCLUDED."homeScore",
+                           "awayScore" = EXCLUDED."awayScore",
+                           "winnerTeamId" = EXCLUDED."winnerTeamId",
+                           "loserTeamId" = EXCLUDED."loserTeamId",
+                           "isDraw" = EXCLUDED."isDraw",
+                           "updatedAt" = NOW()''',
+                    (gen_id(), db_game_id, int(h_score), int(a_score),
+                     winner, loser, is_draw, scheduled_at),
+                )
+                total_written += 1
+
+            cursor_date = chunk_end + timedelta(days=1)
+
+    return total_written
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Feature engineering (current-season proxy)
 # ═══════════════════════════════════════════════════════════════════════════════
 def parse_record(s: str | None) -> float:
     if not s:
@@ -143,15 +247,12 @@ def build_team_features(cur) -> dict:
             'streak': parse_streak(streak),
             'homePct': parse_record(home_rec),
             'awayPct': parse_record(away_rec),
-            # Offense (filled below)
             'avg': 0.250, 'obp': 0.330, 'slg': 0.380, 'ops': 0.710,
             'isop': 0.130, 'bb_k': 0.55, 'hr': 10, 'rbi': 50,
-            # Pitching (filled below)
             'era': 4.50, 'whip': 1.40, 'k9': 7.0, 'bb9': 3.5,
             'kbb_pct': 10.0, 'fip': 4.50, 'hra': 10, 'starter_era': 4.00,
         }
 
-    # Team offense aggregation (AB-weighted OPS, AVG, OBP, SLG)
     cur.execute(
         '''SELECT t."nameKo",
                   SUM(s."atBats")::float,
@@ -173,10 +274,10 @@ def build_team_features(cur) -> dict:
         name, ab, hits, bb, so, hr, rbi, doubles, triples, pa = row
         if name not in teams or not ab or ab <= 0:
             continue
-        avg = hits / ab if ab > 0 else 0.250
+        avg = hits / ab
         singles = hits - (doubles or 0) - (triples or 0) - (hr or 0)
         tb = singles + 2 * (doubles or 0) + 3 * (triples or 0) + 4 * (hr or 0)
-        slg = tb / ab if ab > 0 else 0.380
+        slg = tb / ab
         obp = (hits + bb) / (pa or ab) if (pa or ab) > 0 else 0.330
         teams[name].update({
             'avg': avg, 'obp': obp, 'slg': slg, 'ops': obp + slg,
@@ -185,7 +286,6 @@ def build_team_features(cur) -> dict:
             'hr': int(hr or 0), 'rbi': int(rbi or 0),
         })
 
-    # Team pitching aggregation (IP-weighted ERA, WHIP, K9, BB9, FIP)
     cur.execute(
         '''SELECT t."nameKo",
                   SUM(s."inningsPitched"::float)::float,
@@ -204,29 +304,25 @@ def build_team_features(cur) -> dict:
         name, ip, er, h, bb, so, hr_allowed = row
         if name not in teams or not ip or ip <= 0:
             continue
-        era = (er * 9) / ip if ip > 0 else 4.50
-        whip = (h + bb) / ip if ip > 0 else 1.40
-        k9 = (so * 9) / ip if ip > 0 else 7.0
-        bb9 = (bb * 9) / ip if ip > 0 else 3.5
-        kbb_pct = (so - bb) / ip * 9 if ip > 0 else 5.0
-        # FIP ≈ (13HR + 3BB - 2K) / IP + constant
-        fip = ((13 * hr_allowed + 3 * bb - 2 * so) / ip + 3.2) if ip > 0 else 4.50
         teams[name].update({
-            'era': era, 'whip': whip, 'k9': k9, 'bb9': bb9,
-            'kbb_pct': kbb_pct, 'fip': fip,
+            'era': (er * 9) / ip,
+            'whip': (h + bb) / ip,
+            'k9': (so * 9) / ip,
+            'bb9': (bb * 9) / ip,
+            'kbb_pct': (so - bb) / ip * 9,
+            'fip': ((13 * hr_allowed + 3 * bb - 2 * so) / ip + 3.2),
             'hra': int(hr_allowed or 0),
         })
 
-    # Starter ERA proxy (lowest ERA pitcher per team, min 5 games)
     cur.execute(
-        '''SELECT DISTINCT ON (t."nameKo") t."nameKo", p."nameKo", s.era::float
+        '''SELECT DISTINCT ON (t."nameKo") t."nameKo", s.era::float
            FROM "PlayerPitcherSeasonStat" s
            JOIN "Player" p ON s."playerId" = p.id
            JOIN "Team" t ON p."currentTeamId" = t.id
            WHERE s.era IS NOT NULL AND s.games >= 5
            ORDER BY t."nameKo", s.era ASC'''
     )
-    for team_name, _, era in cur.fetchall():
+    for team_name, era in cur.fetchall():
         if team_name in teams:
             teams[team_name]['starter_era'] = float(era)
 
@@ -245,7 +341,7 @@ FEATURE_NAMES = [
 def build_feature_vector(hf: dict, af: dict) -> list[float]:
     return [
         hf['winPct'] - af['winPct'],
-        af['rank'] - hf['rank'],  # lower rank = better
+        af['rank'] - hf['rank'],
         hf['last10Pct'] - af['last10Pct'],
         hf['streak'] - af['streak'],
         hf['homePct'] - af['awayPct'],
@@ -269,55 +365,109 @@ def build_feature_vector(hf: dict, af: dict) -> list[float]:
     ]
 
 
+def load_real_training_data(cur, team_features: dict) -> tuple[np.ndarray, np.ndarray]:
+    """Fetch completed games from DB; label = 1 if home won, 0 otherwise.
+    Draws are dropped (rare in KBO, ~3% of games)."""
+    cur.execute(
+        '''SELECT ht."nameKo", at."nameKo", gr."homeScore", gr."awayScore"
+           FROM "Game" g
+           JOIN "GameResult" gr ON gr."gameId" = g.id
+           JOIN "Team" ht ON ht.id = g."homeTeamId"
+           JOIN "Team" at ON at.id = g."awayTeamId"
+           WHERE gr."homeScore" IS NOT NULL AND gr."awayScore" IS NOT NULL
+             AND gr."isDraw" = FALSE'''
+    )
+    rows = cur.fetchall()
+    X: list[list[float]] = []
+    y: list[int] = []
+    for home_name, away_name, hs, as_ in rows:
+        if home_name not in team_features or away_name not in team_features:
+            continue
+        features = build_feature_vector(team_features[home_name], team_features[away_name])
+        label = 1 if int(hs) > int(as_) else 0
+        X.append(features)
+        y.append(label)
+    return np.array(X), np.array(y)
+
+
+def build_synthetic_training_data(team_features: dict) -> tuple[np.ndarray, np.ndarray]:
+    """Fallback when real-outcome data is insufficient."""
+    team_names = list(team_features.keys())
+    X: list[list[float]] = []
+    y: list[int] = []
+    rng = np.random.default_rng(42)
+    for home in team_names:
+        for away in team_names:
+            if home == away:
+                continue
+            hf = team_features[home]; af = team_features[away]
+            features = build_feature_vector(hf, af)
+            home_strength = hf['winPct'] * 0.55 + hf['last10Pct'] * 0.25 + hf['homePct'] * 0.20
+            away_strength = af['winPct'] * 0.55 + af['last10Pct'] * 0.25 + af['awayPct'] * 0.20
+            prob = home_strength / (home_strength + away_strength) + 0.035
+            for _ in range(10):
+                noise = rng.normal(0, 0.05)
+                X.append(features)
+                y.append(1 if (prob + noise) > 0.5 else 0)
+    return np.array(X), np.array(y)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Main pipeline
 # ═══════════════════════════════════════════════════════════════════════════════
 print('=' * 60)
-print(f'KBO AI Predictor — {MODEL_VERSION} (training + live inference)')
+print(f'KBO AI Predictor — {MODEL_VERSION}')
 print('=' * 60)
 
 conn = psycopg2.connect(DATABASE_URL)
 conn.autocommit = False
 cur = conn.cursor()
 
+cur.execute('SELECT id, "nameKo" FROM "Team"')
+team_id_by_name = {name: tid for tid, name in cur.fetchall()}
+print(f'Teams loaded: {len(team_id_by_name)}')
+
+# 1. Collect historical results
+print('\n[1/4] Collecting historical KBO results from Naver...')
+history_written = collect_historical_games(cur, team_id_by_name)
+conn.commit()
+print(f'      Historical games upserted: {history_written}')
+
+# 2. Build current team features
 team_features = build_team_features(cur)
-print(f'Loaded features for {len(team_features)} teams')
+print(f'\n[2/4] Team features built for {len(team_features)} teams')
 if len(team_features) < 2:
-    print('ERROR: insufficient team features in DB — abort')
+    print('ERROR: insufficient team features — abort')
     conn.close()
     sys.exit(1)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Generate training samples (synthetic labels — replicating winPct heuristic
-# with noise. Real historical outcomes will replace this when GameResult is
-# backfilled; today the model still learns a calibrated non-linear mapping.)
-# ─────────────────────────────────────────────────────────────────────────────
-team_names = list(team_features.keys())
-X_train: list[list[float]] = []
-y_train: list[int] = []
-rng = np.random.default_rng(42)
+# 3. Load training data (real preferred, synthetic fallback)
+X_real, y_real = load_real_training_data(cur, team_features)
+print(f'\n[3/4] Real-outcome games available: {len(X_real)}')
+label_mode = 'real'
+if len(X_real) >= 50 and len(set(y_real.tolist())) == 2:
+    X, y = X_real, y_real
+    print(f'      Using REAL labels (home win rate: {np.mean(y):.3f})')
+else:
+    X, y = build_synthetic_training_data(team_features)
+    label_mode = 'synthetic'
+    print(f'      Insufficient real data — using SYNTHETIC fallback ({len(X)} samples)')
 
-for home in team_names:
-    for away in team_names:
-        if home == away:
-            continue
-        hf = team_features[home]; af = team_features[away]
-        features = build_feature_vector(hf, af)
-        home_strength = hf['winPct'] * 0.55 + hf['last10Pct'] * 0.25 + hf['homePct'] * 0.20
-        away_strength = af['winPct'] * 0.55 + af['last10Pct'] * 0.25 + af['awayPct'] * 0.20
-        prob = home_strength / (home_strength + away_strength) + 0.035
-        for _ in range(10):
-            noise = rng.normal(0, 0.05)
-            label = 1 if (prob + noise) > 0.5 else 0
-            X_train.append(features)
-            y_train.append(label)
+# Hold-out accuracy on real data (honest number)
+holdout_acc = None
+holdout_brier = None
+if label_mode == 'real' and len(X) >= 100:
+    X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+    probe = xgb.XGBClassifier(n_estimators=200, max_depth=5, learning_rate=0.08,
+                               subsample=0.8, colsample_bytree=0.8, random_state=42, eval_metric='logloss')
+    probe.fit(X_tr, y_tr)
+    p_te = probe.predict_proba(X_te)[:, 1]
+    holdout_acc = float(accuracy_score(y_te, (p_te >= 0.5).astype(int)))
+    holdout_brier = float(brier_score_loss(y_te, p_te))
+    print(f'      Hold-out test accuracy: {holdout_acc:.4f}   Brier: {holdout_brier:.4f}')
 
-X = np.array(X_train); y = np.array(y_train)
-print(f'Training samples: {len(X)}  Features: {len(FEATURE_NAMES)}  Home win rate: {np.mean(y):.3f}')
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Model comparison + final train
-# ─────────────────────────────────────────────────────────────────────────────
+# 4. Model selection + final train
+print('\n[4/4] Model selection (5-fold CV on full data)')
 cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 candidates = {
     'Logistic Regression': LogisticRegression(max_iter=1000, random_state=42),
@@ -327,11 +477,14 @@ candidates = {
 }
 best_name, best_score = '', 0.0
 for name, model in candidates.items():
-    scores = cross_val_score(model, X, y, cv=cv, scoring='accuracy')
-    print(f'  {name:20s} acc={scores.mean():.4f} ±{scores.std():.4f}')
-    if scores.mean() > best_score:
-        best_score = scores.mean(); best_name = name
-print(f'Best: {best_name} (acc {best_score:.4f})')
+    try:
+        scores = cross_val_score(model, X, y, cv=cv, scoring='accuracy')
+        print(f'  {name:20s} acc={scores.mean():.4f} ±{scores.std():.4f}')
+        if scores.mean() > best_score:
+            best_score = scores.mean(); best_name = name
+    except Exception as e:
+        print(f'  {name:20s} skipped ({e})')
+print(f'Best: {best_name} (CV acc {best_score:.4f})')
 
 final_model = xgb.XGBClassifier(
     n_estimators=200, max_depth=5, learning_rate=0.08,
@@ -340,33 +493,22 @@ final_model = xgb.XGBClassifier(
 )
 final_model.fit(X, y)
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
 # Live inference on today's real Naver KBO games
-# ─────────────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
 print(f'\nFetching today\'s KBO schedule from Naver ({TODAY_KST})...')
-today_games = fetch_naver_today_games(TODAY_KST)
+today_games = fetch_naver_range(TODAY_KST, TODAY_KST)
+today_games = [g for g in today_games if g.get('statusCode') in ('BEFORE', 'STARTED', 'RESULT', 'DELAY')]
 print(f'Found {len(today_games)} KBO games today')
 
-# Get season id
-cur.execute('SELECT id FROM "Season" WHERE year = 2026 LIMIT 1')
-row = cur.fetchone()
-if not row:
-    print('No 2026 season — aborting inference'); conn.close(); sys.exit(0)
-season_id = row[0]
-
-# Cache team id by name
-cur.execute('SELECT id, "nameKo" FROM "Team"')
-team_id_by_name = {name: tid for tid, name in cur.fetchall()}
-
+season_id_2026 = ensure_season(cur, 2026)
 written = 0
 for g in today_games:
     home_name = g.get('homeTeamName'); away_name = g.get('awayTeamName')
     if home_name not in team_features or away_name not in team_features:
-        print(f'  skip {g.get("gameId")}: missing team features for {home_name}/{away_name}')
         continue
     hf = dict(team_features[home_name]); af = dict(team_features[away_name])
 
-    # Override starter ERA from Naver announced starter, if present
     preview = fetch_naver_preview(g['gameId'])
     home_starter = parse_starter(preview.get('homeStarter'))
     away_starter = parse_starter(preview.get('awayStarter'))
@@ -379,49 +521,50 @@ for g in today_games:
 
     features = build_feature_vector(hf, af)
     prob = float(final_model.predict_proba([features])[0][1])
-    prob = max(0.08, min(0.92, prob))  # clip extreme
+    prob = max(0.08, min(0.92, prob))
     gap = abs(prob - 0.5)
     conf = '매우 높음' if gap >= 0.20 else '높음' if gap >= 0.12 else '중상' if gap >= 0.05 else '보통'
 
-    # Feature importance-based reasons
     importances = dict(zip(FEATURE_NAMES, final_model.feature_importances_))
     top_features = sorted(importances.items(), key=lambda kv: kv[1], reverse=True)[:5]
 
+    label_source = '실제 경기 결과 라벨' if label_mode == 'real' else '합성 라벨 (과거 데이터 부족)'
+    acc_text = (f'홀드아웃 정확도 {holdout_acc:.3f} · Brier {holdout_brier:.3f}'
+                if holdout_acc is not None else f'5-fold CV {best_score:.3f}')
+
     reasons: list[str] = []
-    reasons.append(f'[모델] {MODEL_VERSION} (XGBoost, 22 features, 트레이닝 정확도 {best_score:.3f})')
+    reasons.append(f'[모델] {MODEL_VERSION} · XGBoost 22-피처 · {label_source} {len(X)}샘플 · {acc_text}')
     reasons.append(f'[일정] {home_name} vs {away_name} · {g.get("gameDateTime","")[11:16]} · {g.get("statusInfo","경기전")}')
     reasons.append(f'[ML 예측] 홈 {prob * 100:.1f}% / 원정 {(1 - prob) * 100:.1f}%')
     reasons.append(f'[승률] {home_name} .{hf["winPct"]:.3f} vs {away_name} .{af["winPct"]:.3f}')
     reasons.append(f'[순위] {home_name} {hf["rank"]}위 vs {away_name} {af["rank"]}위')
     reasons.append(f'[최근10경기] {home_name} {hf["last10Pct"] * 100:.0f}% · {away_name} {af["last10Pct"] * 100:.0f}%')
-    reasons.append(f'[연속] {home_name} {"연승" if hf["streak"] > 0 else "연패" if hf["streak"] < 0 else "중립"} {abs(hf["streak"])} · {away_name} {"연승" if af["streak"] > 0 else "연패" if af["streak"] < 0 else "중립"} {abs(af["streak"])}')
+    if hf['streak'] != 0 or af['streak'] != 0:
+        reasons.append(f'[연속] {home_name} {"연승" if hf["streak"] > 0 else "연패" if hf["streak"] < 0 else "-"} {abs(hf["streak"])} · {away_name} {"연승" if af["streak"] > 0 else "연패" if af["streak"] < 0 else "-"} {abs(af["streak"])}')
     if home_starter and away_starter:
         reasons.append(f'[선발 (KBO 발표)] {home_name} {home_starter["name"]} (ERA {home_starter["era"]}, {home_starter["record"]}) vs {away_name} {away_starter["name"]} (ERA {away_starter["era"]}, {away_starter["record"]})')
     else:
-        reasons.append(f'[선발] 발표 전 — 시즌 ERA 1위 투수로 추정 ({home_name} {hf["starter_era"]:.2f} · {away_name} {af["starter_era"]:.2f})')
+        reasons.append(f'[선발] 발표 전 — 시즌 ERA 1위 투수 추정 ({home_name} {hf["starter_era"]:.2f} · {away_name} {af["starter_era"]:.2f})')
     reasons.append(f'[팀 OPS] {home_name} {hf["ops"]:.3f} · {away_name} {af["ops"]:.3f}')
     reasons.append(f'[팀 타율] {home_name} {hf["avg"]:.3f} · {away_name} {af["avg"]:.3f}')
-    reasons.append(f'[팀 장타율 SLG] {home_name} {hf["slg"]:.3f} · {away_name} {af["slg"]:.3f}')
-    reasons.append(f'[팀 출루율 OBP] {home_name} {hf["obp"]:.3f} · {away_name} {af["obp"]:.3f}')
+    reasons.append(f'[팀 장타 SLG] {home_name} {hf["slg"]:.3f} · {away_name} {af["slg"]:.3f}')
+    reasons.append(f'[팀 출루 OBP] {home_name} {hf["obp"]:.3f} · {away_name} {af["obp"]:.3f}')
     reasons.append(f'[팀 ERA] {home_name} {hf["era"]:.2f} · {away_name} {af["era"]:.2f}')
     reasons.append(f'[팀 WHIP] {home_name} {hf["whip"]:.2f} · {away_name} {af["whip"]:.2f}')
     reasons.append(f'[팀 K/9] {home_name} {hf["k9"]:.2f} · {away_name} {af["k9"]:.2f}')
-    reasons.append(f'[팀 BB/9] {home_name} {hf["bb9"]:.2f} · {away_name} {af["bb9"]:.2f}')
     reasons.append(f'[팀 FIP] {home_name} {hf["fip"]:.2f} · {away_name} {af["fip"]:.2f}')
     reasons.append(f'[팀 홈런] {home_name} {hf["hr"]}개 · {away_name} {af["hr"]}개')
     reasons.append(f'[피홈런] {home_name} {hf["hra"]}개 · {away_name} {af["hra"]}개 (적을수록 유리)')
-    reasons.append(f'[홈 어드밴티지] +3.5% (KBO 평균 홈 승률 기반)')
-    reasons.append(f'[주요 피처 (XGBoost 학습 중요도)] ' + ', '.join(f'{n} {v:.2f}' for n, v in top_features))
+    reasons.append(f'[홈 어드밴티지] +3.5% (KBO 평균 홈 승률)')
+    reasons.append(f'[XGBoost 학습 중요도 TOP5] ' + ', '.join(f'{n} {v:.2f}' for n, v in top_features))
 
     home_team_id = team_id_by_name.get(home_name); away_team_id = team_id_by_name.get(away_name)
     if not home_team_id or not away_team_id:
-        print(f'  skip {g["gameId"]}: missing team id'); continue
+        continue
 
-    # Upsert Game (sourceGameKey = Naver gameId)
     scheduled_at = g.get('gameDateTime')
-    status_code = g.get('statusCode', 'BEFORE')
     status_map = {'BEFORE': 'SCHEDULED', 'STARTED': 'LIVE', 'RESULT': 'FINAL', 'CANCEL': 'CANCELLED', 'POSTPONED': 'POSTPONED'}
-    db_status = status_map.get(status_code, 'SCHEDULED')
+    db_status = status_map.get(g.get('statusCode', 'BEFORE'), 'SCHEDULED')
 
     cur.execute(
         '''INSERT INTO "Game" (id, "sourceGameKey", "seasonId", "gameDate", "gameType",
@@ -432,12 +575,11 @@ for g in today_games:
                status = EXCLUDED.status,
                "updatedAt" = NOW()
            RETURNING id''',
-        (gen_id(), g['gameId'], season_id, TODAY_KST, 'REGULAR_SEASON',
+        (gen_id(), g['gameId'], season_id_2026, TODAY_KST, 'REGULAR_SEASON',
          home_team_id, away_team_id, scheduled_at, db_status),
     )
     db_game_id = cur.fetchone()[0]
 
-    # Replace today's prediction rows for this game
     cur.execute(
         '''DELETE FROM "Prediction" WHERE "gameId" = %s AND "predictedAt"::date = CURRENT_DATE''',
         (db_game_id,),
@@ -451,7 +593,6 @@ for g in today_games:
     written += 1
     print(f'  {away_name} @ {home_name}: {prob * 100:.1f}% [{conf}]')
 
-# Clean up legacy synthetic games
 cur.execute('''DELETE FROM "Game" WHERE "sourceGameKey" LIKE 'auto_%' OR "sourceGameKey" LIKE 'ml_%' ''')
 legacy_cleaned = cur.rowcount
 
@@ -459,20 +600,23 @@ conn.commit()
 cur.close()
 conn.close()
 
-# Keep JSON export for debugging / ML audit
 os.makedirs('analysis', exist_ok=True)
 with open('analysis/ml_predictions.json', 'w', encoding='utf-8') as f:
     json.dump({
         'modelVersion': MODEL_VERSION,
-        'modelType': 'XGBoost',
-        'features': FEATURE_NAMES,
+        'labelMode': label_mode,
         'trainingSamples': int(len(X)),
+        'realGameLabels': int(len(X_real)),
         'cvAccuracy': round(float(best_score), 4),
+        'holdoutAccuracy': holdout_acc,
+        'holdoutBrier': holdout_brier,
+        'historicalGamesIngested': history_written,
         'todayGames': len(today_games),
         'predictionsWritten': written,
         'legacyCleaned': int(legacy_cleaned),
         'ranAt': datetime.now(KST).isoformat(),
     }, f, ensure_ascii=False, indent=2)
 
-print(f'\nWritten to Supabase: {written} predictions for {TODAY_KST} ({MODEL_VERSION})')
-print(f'Legacy synthetic games cleaned: {legacy_cleaned}')
+print(f'\nWritten to Supabase: {written} predictions for {TODAY_KST}')
+print(f'Label mode: {label_mode} ({len(X_real)} real games, {len(X)} total training samples)')
+print(f'Legacy cleaned: {legacy_cleaned}')
