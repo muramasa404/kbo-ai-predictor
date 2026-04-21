@@ -54,13 +54,16 @@ jobs:
       - name: Train ML Model + write today's predictions to Supabase
         env:
           PYTHONIOENCODING: utf-8
-        run: python analysis/train_model.py || echo "ML training/inference failed, continuing..."
+          PYTHONUNBUFFERED: "1"
+        run: |
+          set -euo pipefail
+          python -u analysis/train_model.py
 
       - name: Trigger Vercel Cron Update
+        continue-on-error: true
         run: |
           curl -s -m 30 -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            https://web-muramasa404s-projects.vercel.app/api/cron/update \
-            || echo "Vercel cron trigger failed"
+            https://kbo-ai-predict-muramasa404s-projects.vercel.app/api/cron/update
 
       - name: Summary
         run: echo "Hourly update completed at $(date -u '+%Y-%m-%d %H:%M UTC')"

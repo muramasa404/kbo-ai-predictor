@@ -24,8 +24,22 @@ import re
 import ssl
 import sys
 import urllib.request
+import traceback
 import uuid
 from datetime import datetime, timedelta, timezone
+
+
+def _log_uncaught(exc_type, exc, tb):
+    """Last-resort logger — surface the full traceback so `|| echo` wrappers
+    in CI never silently swallow failures again."""
+    print('\n' + '=' * 70, flush=True)
+    print(f'FATAL [{exc_type.__name__}]: {exc}', flush=True)
+    print('=' * 70, flush=True)
+    traceback.print_exception(exc_type, exc, tb)
+    print('=' * 70, flush=True)
+
+
+sys.excepthook = _log_uncaught
 
 import numpy as np
 import psycopg2
