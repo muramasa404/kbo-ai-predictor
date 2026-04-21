@@ -14,7 +14,7 @@ interface PredictedStarter { name: string; era: string; record: string }
 interface TeamOffense { ops: number | null; avg: number | null; hr: number; rbi: number; weightedAb: number; topThreeOps: string[] }
 interface TeamPitching { era: number | null; whip: number | null; kPer9: number | null; weightedIp: number }
 
-const MODEL_VERSION = 'kap_model_v5.0.0'
+const MODEL_VERSION = 'kap_model_v5.3.0'
 
 export async function getDashboardPayloadFromDb(date: string): Promise<FullDashboardPayload | null> {
   const [naverGames, teamRanks, allHitters, allPitchers, latestSnapshot, playerCount] = await Promise.all([
