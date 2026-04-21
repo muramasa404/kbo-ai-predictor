@@ -153,6 +153,25 @@ body { overflow-x: hidden; }
 .trust-weak .trust-title strong { color: var(--red); }
 .trust-pending .trust-icon { color: var(--text-3); }
 
+/* ═══ v5.3.1 — Player props panel (statistical) ═══ */
+.pp-panel {
+  margin-top: 8px; padding: 10px 12px; border-radius: 11px;
+  background: var(--gray-bg); border: 1px solid rgba(0,0,0,0.04);
+}
+.pp-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.pp-icon { font-size: 16px !important; color: var(--blue); }
+.pp-label { flex: 1; font-size: 12px; font-weight: 700; color: var(--text-1); letter-spacing: -0.2px; }
+.pp-method { font-size: 10px; color: var(--text-3); font-weight: 500; letter-spacing: -0.2px; }
+.pp-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.pp-col { background: var(--white); border-radius: 8px; padding: 8px; }
+.pp-col-head { font-size: 11px; font-weight: 800; color: var(--text-1); letter-spacing: -0.2px; margin-bottom: 6px; text-align: center; }
+.pp-list { display: flex; flex-direction: column; gap: 4px; }
+.pp-row { display: grid; grid-template-columns: 1fr auto auto; gap: 4px; align-items: center; font-size: 10px; letter-spacing: -0.2px; }
+.pp-name { font-weight: 700; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-stat { font-weight: 600; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.pp-starter { margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(0,0,0,0.08); display: grid; grid-template-columns: 1fr auto auto; gap: 4px; align-items: center; font-size: 10px; letter-spacing: -0.2px; }
+.pp-starter-name { font-weight: 700; color: var(--blue); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* ═══ v5.3.1 — First inning lead panel ═══ */
 .fi-panel {
   margin-top: 8px; padding: 10px 12px; border-radius: 11px;

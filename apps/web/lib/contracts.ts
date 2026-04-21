@@ -17,6 +17,32 @@ export interface FirstInningLeadPrediction {
   holdoutAccuracy?: number | null
 }
 
+export interface HitterPropRow {
+  name: string
+  seasonAvg: number
+  hit1PlusProb: number
+  hit2PlusProb: number
+  hrProb: number
+}
+
+export interface StarterKPropRow {
+  name: string
+  seasonKPer9: number
+  expectedK: number
+  k5PlusProb: number
+  k7PlusProb: number
+}
+
+export interface PlayerPropsPayload {
+  method: string
+  assumedAtBats: number
+  assumedStarterIP: number
+  homeHitters: HitterPropRow[]
+  awayHitters: HitterPropRow[]
+  homeStarterK: StarterKPropRow | null
+  awayStarterK: StarterKPropRow | null
+}
+
 export interface PredictionCardData {
   id: string
   gameTime: string
@@ -30,6 +56,7 @@ export interface PredictionCardData {
   awayStarter?: { name: string; era: string; record: string } | null
   runTotal?: RunTotalPrediction | null
   firstInningLead?: FirstInningLeadPrediction | null
+  playerProps?: PlayerPropsPayload | null
 }
 
 export interface MetricCardData {

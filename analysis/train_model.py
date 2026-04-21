@@ -280,6 +280,87 @@ def parse_last10(s: str | None) -> float:
     return w / t if t > 0 else 0.5
 
 
+def fetch_top_hitters_per_team(cur, n: int = 3) -> dict[str, list[dict]]:
+    """Top-N hitters per team by OPS (min 30 AB). Returns {team: [{name,...}]}.
+    Used to compute prop probabilities (hit/HR) per game."""
+    cur.execute(
+        '''SELECT t."nameKo", p."nameKo",
+                  COALESCE(s."atBats", 0), COALESCE(s.hits, 0),
+                  COALESCE(s."plateAppearances", 0),
+                  s.avg, s.ops, COALESCE(s."homeRuns", 0)
+           FROM "PlayerHitterSeasonStat" s
+           JOIN "Player" p ON s."playerId" = p.id
+           JOIN "Team" t ON p."currentTeamId" = t.id
+           WHERE s."atBats" >= 30
+           ORDER BY t."nameKo", s.ops DESC NULLS LAST'''
+    )
+    out: dict[str, list[dict]] = {}
+    for row in cur.fetchall():
+        team = row[0]
+        if team not in out:
+            out[team] = []
+        if len(out[team]) >= n:
+            continue
+        ab = int(row[2] or 0); pa = int(row[4] or 0)
+        avg = float(row[5]) if row[5] is not None else (row[3] / ab if ab > 0 else 0.25)
+        out[team].append({
+            'name': row[1],
+            'ab': ab, 'hits': int(row[3] or 0), 'pa': pa,
+            'avg': avg,
+            'ops': float(row[6]) if row[6] is not None else 0.70,
+            'hr': int(row[7] or 0),
+        })
+    return out
+
+
+def compute_hitter_props(h: dict, est_ab: int = 4) -> dict:
+    """Binomial prop probabilities for a hitter given expected at-bats."""
+    avg = max(0.01, min(0.65, h['avg']))
+    hr_rate = (h['hr'] / h['pa']) if h['pa'] > 0 else 0.015
+    hr_rate = max(0.001, min(0.10, hr_rate))
+    p_no_hit = (1 - avg) ** est_ab
+    p_one_hit = est_ab * avg * ((1 - avg) ** (est_ab - 1))
+    return {
+        'name': h['name'],
+        'seasonAvg': round(avg, 3),
+        'hit1PlusProb': round(1 - p_no_hit, 4),
+        'hit2PlusProb': round(1 - p_no_hit - p_one_hit, 4),
+        'hrProb': round(1 - (1 - hr_rate) ** est_ab, 4),
+    }
+
+
+def compute_starter_k_props(starter_info: dict | None) -> dict | None:
+    """Poisson K prop for starting pitcher. Uses season K/9 + expected IP (5.5)."""
+    if not starter_info:
+        return None
+    stats = starter_info.get('currentSeasonStats', {}) or {}
+    inn_s = stats.get('inn')
+    kk = stats.get('kk')
+    try:
+        inn = float(inn_s) if inn_s is not None else 0.0
+        k = int(kk) if kk is not None else 0
+    except (TypeError, ValueError):
+        return None
+    if inn <= 0 or k <= 0:
+        return None
+    k_per_9 = (k * 9) / inn
+    est_ip = 5.5
+    rate = max(1.0, min(12.0, k_per_9 * est_ip / 9))
+
+    def poisson_at_least(lam: float, target: int) -> float:
+        import math as _m
+        p_below = sum(_m.exp(-lam) * (lam ** i) / _m.factorial(i) for i in range(target))
+        return max(0.0, min(1.0, 1 - p_below))
+
+    return {
+        'name': starter_info.get('playerInfo', {}).get('name', '미정'),
+        'seasonKPer9': round(k_per_9, 2),
+        'expectedK': round(rate, 2),
+        'k5PlusProb': round(poisson_at_least(rate, 5), 4),
+        'k7PlusProb': round(poisson_at_least(rate, 7), 4),
+    }
+
+
 def build_team_features(cur) -> dict:
     cur.execute(
         '''SELECT t."nameKo", r.rank, r.wins, r.losses, r.draws,
@@ -634,6 +715,9 @@ def over_under_probs(expected_total: float, std: float) -> list[dict]:
 # Live inference on today's real Naver KBO games
 # ═══════════════════════════════════════════════════════════════════════════════
 print(f'\nFetching today\'s KBO schedule from Naver ({TODAY_KST})...')
+top_hitters_by_team = fetch_top_hitters_per_team(cur, n=3)
+print(f'Top-3 hitter pool ready for {len(top_hitters_by_team)} teams')
+
 today_games = fetch_naver_range(TODAY_KST, TODAY_KST)
 today_games = [g for g in today_games if g.get('statusCode') in ('BEFORE', 'STARTED', 'RESULT', 'DELAY')]
 print(f'Found {len(today_games)} KBO games today')
@@ -738,6 +822,22 @@ for g in today_games:
         reasons.append(
             f'[득점 합계 예측] 예상 {expected_total:.1f}점 · {closest["line"]}점 over {closest["overProb"] * 100:.1f}% / under {closest["underProb"] * 100:.1f}%'
         )
+    # v5.3.1 — player props (statistical, not ML-trained — ML heads arrive in v5.4 once PlayerGameLog is collected)
+    home_hitter_props = [compute_hitter_props(h) for h in top_hitters_by_team.get(home_name, [])]
+    away_hitter_props = [compute_hitter_props(h) for h in top_hitters_by_team.get(away_name, [])]
+    home_starter_k = compute_starter_k_props(preview.get('homeStarter'))
+    away_starter_k = compute_starter_k_props(preview.get('awayStarter'))
+    if home_hitter_props or away_hitter_props or home_starter_k or away_starter_k:
+        extras['playerProps'] = {
+            'method': 'statistical (Binomial hitter / Poisson starter K, v5.3.1)',
+            'assumedAtBats': 4,
+            'assumedStarterIP': 5.5,
+            'homeHitters': home_hitter_props,
+            'awayHitters': away_hitter_props,
+            'homeStarterK': home_starter_k,
+            'awayStarterK': away_starter_k,
+        }
+
     # v5.3.1 — 1st-inning lead
     if first_inning_model is not None:
         fi_prob = float(first_inning_model.predict_proba([features])[0][1])

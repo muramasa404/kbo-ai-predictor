@@ -19,7 +19,7 @@ interface DashboardData {
   date?: string
   hero: { title: string; copy: string; chips: string[] }
   modelTrust?: { sampleSize: number; accuracy: number | null; brierScore: number | null; windowLabel: string; modelVersion: string | null }
-  predictions: Array<{ id: string; gameTime: string; homeTeam: string; awayTeam: string; favoredTeam: string; winProbability: number; confidence: string; topReasons: string[]; homeStarter?: { name: string; era: string; record: string } | null; awayStarter?: { name: string; era: string; record: string } | null; runTotal?: { expected: number; stdev: number; mae?: number | null; lines: Array<{ line: number; overProb: number; underProb: number }> } | null; firstInningLead?: { homeLeadProb: number; awayLeadProb: number; holdoutAccuracy?: number | null } | null }>
+  predictions: Array<{ id: string; gameTime: string; homeTeam: string; awayTeam: string; favoredTeam: string; winProbability: number; confidence: string; topReasons: string[]; homeStarter?: { name: string; era: string; record: string } | null; awayStarter?: { name: string; era: string; record: string } | null; runTotal?: { expected: number; stdev: number; mae?: number | null; lines: Array<{ line: number; overProb: number; underProb: number }> } | null; firstInningLead?: { homeLeadProb: number; awayLeadProb: number; holdoutAccuracy?: number | null } | null; playerProps?: { method: string; assumedAtBats: number; assumedStarterIP: number; homeHitters: Array<{ name: string; seasonAvg: number; hit1PlusProb: number; hit2PlusProb: number; hrProb: number }>; awayHitters: Array<{ name: string; seasonAvg: number; hit1PlusProb: number; hit2PlusProb: number; hrProb: number }>; homeStarterK: { name: string; seasonKPer9: number; expectedK: number; k5PlusProb: number; k7PlusProb: number } | null; awayStarterK: { name: string; seasonKPer9: number; expectedK: number; k5PlusProb: number; k7PlusProb: number } | null } | null }>
   teamRanks: Array<{ rank: number; teamName: string; wins: number; losses: number; draws: number; winPct: string; gamesBack: string; last10: string; streak: string }>
   allHitters: Array<{ rank: number; playerName: string; teamName: string; avg: string; games: number; hits: number; homeRuns: number; rbi: number }>
   allPitchers: Array<{ rank: number; playerName: string; teamName: string; era: string; games: number; wins: number; losses: number; strikeOuts: number; whip: string }>
@@ -210,6 +210,7 @@ function MatchCard({ p, index }: { p: DashboardData['predictions'][number]; inde
 
       {p.runTotal && p.runTotal.lines.length > 0 && <RunTotalPanel runTotal={p.runTotal} />}
       {p.firstInningLead && <FirstInningPanel fi={p.firstInningLead} homeTeam={p.homeTeam} awayTeam={p.awayTeam} /> }
+      {p.playerProps && <PlayerPropsPanel pp={p.playerProps} homeTeam={p.homeTeam} awayTeam={p.awayTeam} />}
 
       <button type="button" className="ai-toggle" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
         <span className="material-icons-round ai-toggle-spark">auto_awesome</span>
@@ -320,6 +321,56 @@ function FirstInningPanel({ fi, homeTeam, awayTeam }: { fi: FirstInning; homeTea
         <span>{awayTeam} {awayPct}%</span>
         <span>{homeTeam} {homePct}%</span>
       </div>
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════ */
+/* PLAYER PROPS panel (statistical v5.3.1) */
+/* ═══════════════════════════════════════ */
+type PlayerProps = NonNullable<DashboardData['predictions'][number]['playerProps']>
+type HitterRow = PlayerProps['homeHitters'][number]
+type StarterKRow = NonNullable<PlayerProps['homeStarterK']>
+
+function PlayerPropsPanel({ pp, homeTeam, awayTeam }: { pp: PlayerProps; homeTeam: string; awayTeam: string }) {
+  return (
+    <div className="pp-panel">
+      <div className="pp-head">
+        <span className="material-icons-round pp-icon">person</span>
+        <span className="pp-label">선수 Prop 확률</span>
+        <span className="pp-method">AB {pp.assumedAtBats} / IP {pp.assumedStarterIP}</span>
+      </div>
+
+      <div className="pp-two-col">
+        <PlayerPropsTeam title={awayTeam} hitters={pp.awayHitters} starterK={pp.awayStarterK} />
+        <PlayerPropsTeam title={homeTeam} hitters={pp.homeHitters} starterK={pp.homeStarterK} />
+      </div>
+    </div>
+  )
+}
+
+function PlayerPropsTeam({ title, hitters, starterK }: { title: string; hitters: HitterRow[]; starterK: StarterKRow | null }) {
+  return (
+    <div className="pp-col">
+      <div className="pp-col-head">{title}</div>
+      {hitters.length > 0 && (
+        <div className="pp-list">
+          {hitters.map((h) => (
+            <div key={h.name} className="pp-row">
+              <span className="pp-name">{h.name}</span>
+              <span className="pp-stat" title="1안타 이상 확률">H1+ {(h.hit1PlusProb * 100).toFixed(0)}%</span>
+              <span className="pp-stat" title="홈런 확률">HR {(h.hrProb * 100).toFixed(1)}%</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {starterK && (
+        <div className="pp-starter">
+          <span className="pp-starter-name">{starterK.name}</span>
+          <span className="pp-stat" title="5K 이상 확률">K5+ {(starterK.k5PlusProb * 100).toFixed(0)}%</span>
+          <span className="pp-stat" title="7K 이상 확률">K7+ {(starterK.k7PlusProb * 100).toFixed(0)}%</span>
+        </div>
+      )}
     </div>
   )
 }

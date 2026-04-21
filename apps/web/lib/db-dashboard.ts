@@ -276,6 +276,7 @@ function buildPrediction(
     awayStarter,
     runTotal: usingMl ? extractRunTotal(ml?.extrasJson) : null,
     firstInningLead: usingMl ? extractFirstInningLead(ml?.extrasJson) : null,
+    playerProps: usingMl ? extractPlayerProps(ml?.extrasJson) : null,
   }
 }
 
@@ -319,6 +320,50 @@ function computeModelTrust(rows: TrustRow[]) {
   const fmt = (d: Date | null) => d ? new Intl.DateTimeFormat('ko-KR', { month: '2-digit', day: '2-digit', timeZone: 'Asia/Seoul' }).format(d) : '-'
   const windowLabel = `${fmt(oldestDate)} ~ ${fmt(newestDate)}`
   return { sampleSize: scored, accuracy, brierScore, windowLabel, modelVersion: latestVersion }
+}
+
+function extractPlayerProps(value: unknown) {
+  if (!value || typeof value !== 'object') return null
+  const v = value as { playerProps?: unknown }
+  const pp = v.playerProps
+  if (!pp || typeof pp !== 'object') return null
+  const p = pp as {
+    method?: unknown; assumedAtBats?: unknown; assumedStarterIP?: unknown
+    homeHitters?: unknown; awayHitters?: unknown
+    homeStarterK?: unknown; awayStarterK?: unknown
+  }
+  const hitters = (raw: unknown) => Array.isArray(raw) ? raw
+    .map((r) => r && typeof r === 'object' ? r as { name?: unknown; seasonAvg?: unknown; hit1PlusProb?: unknown; hit2PlusProb?: unknown; hrProb?: unknown } : null)
+    .map((r) => r && typeof r.name === 'string' ? {
+      name: r.name,
+      seasonAvg: toNum(r.seasonAvg) ?? 0,
+      hit1PlusProb: toNum(r.hit1PlusProb) ?? 0,
+      hit2PlusProb: toNum(r.hit2PlusProb) ?? 0,
+      hrProb: toNum(r.hrProb) ?? 0,
+    } : null)
+    .filter((x): x is { name: string; seasonAvg: number; hit1PlusProb: number; hit2PlusProb: number; hrProb: number } => x != null)
+    : []
+  const starter = (raw: unknown) => {
+    if (!raw || typeof raw !== 'object') return null
+    const s = raw as { name?: unknown; seasonKPer9?: unknown; expectedK?: unknown; k5PlusProb?: unknown; k7PlusProb?: unknown }
+    if (typeof s.name !== 'string') return null
+    return {
+      name: s.name,
+      seasonKPer9: toNum(s.seasonKPer9) ?? 0,
+      expectedK: toNum(s.expectedK) ?? 0,
+      k5PlusProb: toNum(s.k5PlusProb) ?? 0,
+      k7PlusProb: toNum(s.k7PlusProb) ?? 0,
+    }
+  }
+  return {
+    method: typeof p.method === 'string' ? p.method : 'statistical',
+    assumedAtBats: toNum(p.assumedAtBats) ?? 4,
+    assumedStarterIP: toNum(p.assumedStarterIP) ?? 5.5,
+    homeHitters: hitters(p.homeHitters),
+    awayHitters: hitters(p.awayHitters),
+    homeStarterK: starter(p.homeStarterK),
+    awayStarterK: starter(p.awayStarterK),
+  }
 }
 
 function extractFirstInningLead(value: unknown) {
