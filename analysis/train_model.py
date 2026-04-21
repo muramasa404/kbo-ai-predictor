@@ -578,7 +578,17 @@ print('=' * 60)
 print(f'KBO AI Predictor — {MODEL_VERSION}')
 print('=' * 60)
 
-conn = psycopg2.connect(DATABASE_URL)
+def _sanitize_dsn(raw: str) -> str:
+    """Prisma-style URLs often carry `pgbouncer=true` (a libpq extension that
+    psycopg2 rejects). Strip Prisma-only query params before handing the DSN
+    to psycopg2."""
+    from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
+    u = urlparse(raw)
+    keep = [(k, v) for k, v in parse_qsl(u.query) if k not in ('pgbouncer', 'connection_limit', 'pool_timeout', 'schema')]
+    return urlunparse(u._replace(query=urlencode(keep)))
+
+
+conn = psycopg2.connect(_sanitize_dsn(DATABASE_URL))
 conn.autocommit = False
 cur = conn.cursor()
 
