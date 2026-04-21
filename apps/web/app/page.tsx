@@ -33,6 +33,13 @@ interface DbStatus {
 }
 
 const TODAY = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short', timeZone: 'Asia/Seoul' })
+// Compact form for match card centre column: "4/21 (월)"
+const _now = new Date()
+const _short = new Intl.DateTimeFormat('ko-KR', { month: 'numeric', day: 'numeric', weekday: 'short', timeZone: 'Asia/Seoul' }).formatToParts(_now)
+const _month = _short.find((p) => p.type === 'month')?.value.replace('월', '') ?? ''
+const _day = _short.find((p) => p.type === 'day')?.value.replace('일', '') ?? ''
+const _dow = _short.find((p) => p.type === 'weekday')?.value ?? ''
+const TODAY_SHORT = `${_month}/${_day} (${_dow})`
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('home')
@@ -165,11 +172,6 @@ function MatchCard({ p, index }: { p: DashboardData['predictions'][number]; inde
   const [expanded, setExpanded] = useState(false)
   return (
     <article className="match-card slide-up" style={{ animationDelay: `${index * 60}ms` }}>
-      <div className="match-date-row">
-        <span className="material-icons-round match-date-icon">schedule</span>
-        <span className="match-date-text">{TODAY} {p.gameTime}</span>
-      </div>
-
       <div className="match-teams">
         <div className="match-team">
           <img src={getTeamLogo(p.awayTeam)} alt={p.awayTeam} className="logo-m" onError={hideImg} />
@@ -182,6 +184,8 @@ function MatchCard({ p, index }: { p: DashboardData['predictions'][number]; inde
           )}
         </div>
         <div className="match-center">
+          <span className="match-center-date">{TODAY_SHORT}</span>
+          <span className="match-center-time">{p.gameTime}</span>
           <span className="match-vs-label">VS</span>
         </div>
         <div className="match-team">

@@ -14,12 +14,20 @@ interface PredictedStarter { name: string; era: string; record: string }
 interface TeamOffense { ops: number | null; avg: number | null; hr: number; rbi: number; weightedAb: number; topThreeOps: string[] }
 interface TeamPitching { era: number | null; whip: number | null; kPer9: number | null; weightedIp: number }
 
-const MODEL_VERSION = 'kap_model_v5.3.0'
+const MODEL_VERSION = 'kap_model_v5.3.1'
 
 export async function getDashboardPayloadFromDb(date: string): Promise<FullDashboardPayload | null> {
   const [naverGames, teamRanks, allHitters, allPitchers, latestSnapshot, playerCount] = await Promise.all([
     fetchKboGamesForDate(date).catch(() => []),
-    prisma.teamRankDaily.findMany({ orderBy: { rank: 'asc' }, include: { team: true } }),
+    prisma.teamRankDaily.findFirst({ orderBy: { rankDate: 'desc' }, select: { rankDate: true } })
+      .then((latest) => latest
+        ? prisma.teamRankDaily.findMany({
+            where: { rankDate: latest.rankDate },
+            orderBy: { rank: 'asc' },
+            include: { team: true },
+          })
+        : prisma.teamRankDaily.findMany({ orderBy: { rank: 'asc' }, include: { team: true } })
+      ),
     prisma.playerHitterSeasonStat.findMany({
       orderBy: { ops: 'desc' },
       include: { player: { include: { currentTeam: true } } },
@@ -280,8 +288,20 @@ function buildPrediction(
   }
 }
 
+/** Tags the user doesn't want to see in the AI 결과 list. The [모델] line is
+ * verbose metadata, and [일정] duplicates the date/time already shown in the
+ * match card header. */
+const HIDDEN_REASON_TAGS = new Set(['모델', '일정'])
+
+function shouldHideReason(line: string): boolean {
+  const tag = line.match(/^\[([^\]]+)\]/)?.[1]
+  return tag ? HIDDEN_REASON_TAGS.has(tag) : false
+}
+
 function extractMlReasons(value: unknown): string[] {
-  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === 'string')
+  if (Array.isArray(value)) {
+    return value.filter((v): v is string => typeof v === 'string' && !shouldHideReason(v))
+  }
   return []
 }
 
@@ -430,7 +450,8 @@ function buildReasons(
   const r: string[] = []
   const H = game.homeTeamName; const A = game.awayTeamName
 
-  r.push(`[일정] ${H} vs ${A} · ${formatTimeIso(game.scheduledAt)} · ${game.statusInfo || '경기전'}`)
+  // [일정] / [모델] suppressed from AI 결과 — schedule is in the card header,
+  // model metadata lives in the System tab / TrustStrip.
   if (home && away) {
     r.push(`[승률] ${H} .${pct(hPct)} vs ${A} .${pct(aPct)} (차이 ${sign(hPct - aPct, 3)})`)
     r.push(`[순위] ${H} ${home.rank}위 vs ${A} ${away.rank}위`)

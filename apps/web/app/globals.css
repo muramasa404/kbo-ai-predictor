@@ -127,20 +127,33 @@ body { overflow-x: hidden; }
   box-shadow: var(--shadow-apple);
   letter-spacing: var(--track-body);
 }
-.match-date-row {
-  display: flex; align-items: center; gap: 4px;
-  margin-bottom: 12px; padding-bottom: 10px;
-  border-bottom: 1px solid rgba(0,0,0,0.05);
-  font-size: 12px; color: var(--text-3); font-weight: 500;
+.match-teams { display: flex; align-items: center; justify-content: space-between; padding: 4px 0 2px; }
+.match-team { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 96px; }
+.logo-m { width: 48px; height: 48px; object-fit: contain; }
+.team-label { font-size: 15px; font-weight: 800; letter-spacing: var(--track-body); color: var(--text-1); }
+
+/* DESIGN.md: center column stacks schedule meta above the match VS label.
+   Date is tertiary (small, quiet), time is the hero anchor (tabular-nums,
+   bold, tight), VS is a small all-caps divider — not the biggest thing on
+   the card anymore. Aesthetic follows Apple's "compress within, expand
+   between" principle. */
+.match-center {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  min-width: 72px;
 }
-.match-date-icon { font-size: 14px !important; color: var(--text-3); }
-.match-date-text { font-size: 12px; }
-.match-teams { display: flex; align-items: center; justify-content: space-between; }
-.match-team { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 80px; }
-.logo-m { width: 44px; height: 44px; object-fit: contain; }
-.team-label { font-size: 14px; font-weight: 700; letter-spacing: -0.2px; }
-.match-center { display: flex; flex-direction: column; align-items: center; }
-.match-vs-label { font-size: 16px; font-weight: 800; color: var(--text-3); }
+.match-center-date {
+  font-size: 11px; font-weight: 600; color: var(--text-3);
+  letter-spacing: var(--track-caption); line-height: 1.2;
+}
+.match-center-time {
+  font-size: 17px; font-weight: 700; color: var(--text-1);
+  letter-spacing: var(--track-body); line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.match-vs-label {
+  margin-top: 2px; font-size: 10px; font-weight: 800;
+  color: var(--text-3); letter-spacing: 0.6px;
+}
 
 .prob-section { margin-top: 14px; }
 .prob-bars { display: flex; height: 8px; border-radius: 980px; overflow: hidden; gap: 2px; }
