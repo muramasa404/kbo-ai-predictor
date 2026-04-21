@@ -36,13 +36,22 @@ export async function getDashboardPayloadFromDb(date: string): Promise<FullDashb
   if (teamRanks.length === 0 && allHitters.length === 0) return null
 
   const naverGameIds = naverGames.map((g) => g.gameId)
-  const mlRows = naverGameIds.length > 0
-    ? await prisma.prediction.findMany({
-        where: { game: { sourceGameKey: { in: naverGameIds } } },
-        orderBy: { predictedAt: 'desc' },
-        include: { game: { select: { sourceGameKey: true } } },
-      })
-    : []
+  const [mlRows, trustRows] = await Promise.all([
+    naverGameIds.length > 0
+      ? prisma.prediction.findMany({
+          where: { game: { sourceGameKey: { in: naverGameIds } } },
+          orderBy: { predictedAt: 'desc' },
+          include: { game: { select: { sourceGameKey: true } } },
+        })
+      : Promise.resolve([] as []),
+    // Last 50 completed games (FINAL with GameResult) that have a Prediction
+    prisma.prediction.findMany({
+      where: { game: { status: 'FINAL', result: { isNot: null } } },
+      orderBy: { predictedAt: 'desc' },
+      take: 50,
+      include: { game: { include: { result: true } } },
+    }),
+  ])
   const mlByGameId = new Map<string, (typeof mlRows)[number]>()
   for (const row of mlRows) {
     const key = row.game.sourceGameKey
@@ -116,6 +125,7 @@ export async function getDashboardPayloadFromDb(date: string): Promise<FullDashb
       strikeOuts: p.strikeOuts,
       whip: p.whip ? String(p.whip) : '-',
     })),
+    modelTrust: computeModelTrust(trustRows),
     modelInfo: {
       version: MODEL_VERSION,
       description: 'XGBoost(200 trees, depth 5) — 매시간 GitHub Actions가 Naver에서 2025~2026 KBO 완료경기 결과를 수집해 Supabase에 적재하고, 실제 경기 W/L 라벨로 재학습합니다. 오늘 경기는 Naver 실시간 일정 + 발표된 선발투수 ERA를 피처에 반영해 predict_proba 추론합니다.',
@@ -190,6 +200,7 @@ interface MlPredictionRow {
   awayWinProb: unknown
   confidenceGrade: string | null
   topReasonsJson: unknown
+  extrasJson: unknown
   predictedAt: Date
 }
 
@@ -263,12 +274,70 @@ function buildPrediction(
     topReasons: reasons,
     homeStarter,
     awayStarter,
+    runTotal: usingMl ? extractRunTotal(ml?.extrasJson) : null,
   }
 }
 
 function extractMlReasons(value: unknown): string[] {
   if (Array.isArray(value)) return value.filter((v): v is string => typeof v === 'string')
   return []
+}
+
+interface TrustRow {
+  modelVersion: string
+  homeWinProb: unknown
+  game: { result: { homeScore: number | null; awayScore: number | null; isDraw: boolean } | null }
+  predictedAt: Date
+}
+
+function computeModelTrust(rows: TrustRow[]) {
+  if (rows.length === 0) {
+    return { sampleSize: 0, accuracy: null, brierScore: null, windowLabel: '아직 완료된 경기 없음', modelVersion: null }
+  }
+  let correct = 0; let scored = 0; let brierSum = 0
+  let latestVersion: string | null = null
+  let oldestDate: Date | null = null; let newestDate: Date | null = null
+  for (const row of rows) {
+    if (!row.game.result || row.game.result.isDraw) continue
+    const hs = row.game.result.homeScore; const as_ = row.game.result.awayScore
+    if (hs == null || as_ == null) continue
+    const prob = toNum(row.homeWinProb); if (prob == null) continue
+    const homeWon = hs > as_ ? 1 : 0
+    if ((prob >= 0.5 ? 1 : 0) === homeWon) correct++
+    brierSum += Math.pow(prob - homeWon, 2)
+    scored++
+    latestVersion = latestVersion ?? row.modelVersion
+    if (!oldestDate || row.predictedAt < oldestDate) oldestDate = row.predictedAt
+    if (!newestDate || row.predictedAt > newestDate) newestDate = row.predictedAt
+  }
+  if (scored === 0) {
+    return { sampleSize: 0, accuracy: null, brierScore: null, windowLabel: '채점 가능한 경기 없음', modelVersion: latestVersion }
+  }
+  const accuracy = correct / scored
+  const brierScore = brierSum / scored
+  const fmt = (d: Date | null) => d ? new Intl.DateTimeFormat('ko-KR', { month: '2-digit', day: '2-digit', timeZone: 'Asia/Seoul' }).format(d) : '-'
+  const windowLabel = `${fmt(oldestDate)} ~ ${fmt(newestDate)}`
+  return { sampleSize: scored, accuracy, brierScore, windowLabel, modelVersion: latestVersion }
+}
+
+function extractRunTotal(value: unknown) {
+  if (!value || typeof value !== 'object') return null
+  const v = value as { runTotal?: { expected?: unknown; stdev?: unknown; mae?: unknown; lines?: unknown } }
+  const rt = v.runTotal
+  if (!rt || typeof rt !== 'object') return null
+  const expected = toNum(rt.expected); const stdev = toNum(rt.stdev)
+  if (expected == null || stdev == null) return null
+  const lines = Array.isArray(rt.lines)
+    ? rt.lines
+        .map((l: unknown) => {
+          if (!l || typeof l !== 'object') return null
+          const o = l as { line?: unknown; overProb?: unknown; underProb?: unknown }
+          const line = toNum(o.line); const over = toNum(o.overProb); const under = toNum(o.underProb)
+          return line != null && over != null && under != null ? { line, overProb: over, underProb: under } : null
+        })
+        .filter((x): x is { line: number; overProb: number; underProb: number } => x != null)
+    : []
+  return { expected, stdev, mae: toNum(rt.mae), lines }
 }
 
 /**

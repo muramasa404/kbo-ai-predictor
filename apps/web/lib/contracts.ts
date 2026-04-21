@@ -1,3 +1,16 @@
+export interface OverUnderLine {
+  line: number
+  overProb: number
+  underProb: number
+}
+
+export interface RunTotalPrediction {
+  expected: number
+  stdev: number
+  mae?: number | null
+  lines: OverUnderLine[]
+}
+
 export interface PredictionCardData {
   id: string
   gameTime: string
@@ -9,6 +22,7 @@ export interface PredictionCardData {
   topReasons: string[]
   homeStarter?: { name: string; era: string; record: string } | null
   awayStarter?: { name: string; era: string; record: string } | null
+  runTotal?: RunTotalPrediction | null
 }
 
 export interface MetricCardData {
@@ -35,6 +49,14 @@ export interface DetailCardData {
   awayValue: string
 }
 
+export interface ModelTrust {
+  sampleSize: number          // number of past games used
+  accuracy: number | null     // 0..1
+  brierScore: number | null   // 0..1 (lower is better)
+  windowLabel: string         // human-readable range
+  modelVersion: string | null
+}
+
 export interface DashboardPayload {
   date: string
   hero: {
@@ -46,4 +68,5 @@ export interface DashboardPayload {
   analyticsMetrics: MetricCardData[]
   rankings: RankingCardData[]
   details: DetailCardData[]
+  modelTrust?: ModelTrust
 }

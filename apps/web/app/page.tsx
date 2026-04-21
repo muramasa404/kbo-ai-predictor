@@ -18,7 +18,8 @@ type Tab = 'home' | 'rank' | 'stats' | 'system'
 interface DashboardData {
   date?: string
   hero: { title: string; copy: string; chips: string[] }
-  predictions: Array<{ id: string; gameTime: string; homeTeam: string; awayTeam: string; favoredTeam: string; winProbability: number; confidence: string; topReasons: string[]; homeStarter?: { name: string; era: string; record: string } | null; awayStarter?: { name: string; era: string; record: string } | null }>
+  modelTrust?: { sampleSize: number; accuracy: number | null; brierScore: number | null; windowLabel: string; modelVersion: string | null }
+  predictions: Array<{ id: string; gameTime: string; homeTeam: string; awayTeam: string; favoredTeam: string; winProbability: number; confidence: string; topReasons: string[]; homeStarter?: { name: string; era: string; record: string } | null; awayStarter?: { name: string; era: string; record: string } | null; runTotal?: { expected: number; stdev: number; mae?: number | null; lines: Array<{ line: number; overProb: number; underProb: number }> } | null }>
   teamRanks: Array<{ rank: number; teamName: string; wins: number; losses: number; draws: number; winPct: string; gamesBack: string; last10: string; streak: string }>
   allHitters: Array<{ rank: number; playerName: string; teamName: string; avg: string; games: number; hits: number; homeRuns: number; rbi: number }>
   allPitchers: Array<{ rank: number; playerName: string; teamName: string; era: string; games: number; wins: number; losses: number; strikeOuts: number; whip: string }>
@@ -123,6 +124,8 @@ function HomeTab({ data }: { data: DashboardData }) {
         </div>
       </section>
 
+      {data.modelTrust && <TrustStrip trust={data.modelTrust} />}
+
       {/* Predictions — the primary content */}
       <section className="section-m">
         {data.predictions.map((p, i) => (
@@ -205,6 +208,8 @@ function MatchCard({ p, index }: { p: DashboardData['predictions'][number]; inde
         </div>
       </div>
 
+      {p.runTotal && p.runTotal.lines.length > 0 && <RunTotalPanel runTotal={p.runTotal} />}
+
       <button type="button" className="ai-toggle" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
         <span className="material-icons-round ai-toggle-spark">auto_awesome</span>
         <span className="ai-toggle-label">AI 결과</span>
@@ -216,6 +221,78 @@ function MatchCard({ p, index }: { p: DashboardData['predictions'][number]; inde
         </ul>
       )}
     </article>
+  )
+}
+
+/* ═══════════════════════════════════════ */
+/* HCI TRUST STRIP — honest accuracy track  */
+/* ═══════════════════════════════════════ */
+type Trust = NonNullable<DashboardData['modelTrust']>
+function TrustStrip({ trust }: { trust: Trust }) {
+  if (!trust.sampleSize || trust.accuracy == null) {
+    return (
+      <section className="trust-strip trust-pending">
+        <span className="material-icons-round trust-icon">psychology</span>
+        <div className="trust-body">
+          <span className="trust-title">AI 모델 정확도 계측 중</span>
+          <span className="trust-sub">경기 결과가 누적되면 실제 적중률이 여기 표시됩니다.</span>
+        </div>
+      </section>
+    )
+  }
+  const pct = Math.round(trust.accuracy * 100)
+  const brier = trust.brierScore != null ? trust.brierScore.toFixed(3) : '-'
+  const quality = trust.accuracy >= 0.58 ? 'trust-good' : trust.accuracy >= 0.52 ? 'trust-ok' : 'trust-weak'
+  return (
+    <section className={`trust-strip ${quality}`}>
+      <span className="material-icons-round trust-icon">verified</span>
+      <div className="trust-body">
+        <span className="trust-title">최근 {trust.sampleSize}경기 적중률 <strong>{pct}%</strong> · Brier {brier}</span>
+        <span className="trust-sub">
+          {trust.modelVersion ?? '-'} · {trust.windowLabel}
+        </span>
+      </div>
+    </section>
+  )
+}
+
+/* ═══════════════════════════════════════ */
+/* RUN TOTAL (over/under) panel            */
+/* ═══════════════════════════════════════ */
+type RunTotal = NonNullable<DashboardData['predictions'][number]['runTotal']>
+function RunTotalPanel({ runTotal }: { runTotal: RunTotal }) {
+  // Highlight the line whose probability is closest to 50/50 — that's the market-relevant one
+  const headline = runTotal.lines.reduce((best, cur) =>
+    Math.abs(cur.overProb - 0.5) < Math.abs(best.overProb - 0.5) ? cur : best
+  , runTotal.lines[0])
+  const leanOver = headline.overProb > 0.5
+  return (
+    <div className="rt-panel">
+      <div className="rt-head">
+        <span className="material-icons-round rt-icon">query_stats</span>
+        <span className="rt-label">득점 합계 예측</span>
+        <span className="rt-expected">예상 {runTotal.expected.toFixed(1)}점</span>
+      </div>
+      <div className="rt-headline">
+        <span className="rt-line">{headline.line}점 기준</span>
+        <div className="rt-bar-bg">
+          <div className="rt-bar-fg" style={{ width: `${Math.round(headline.overProb * 100)}%`, background: leanOver ? '#0071e3' : '#ff453a' }} />
+        </div>
+        <div className="rt-bar-row">
+          <span>over {(headline.overProb * 100).toFixed(1)}%</span>
+          <span>under {(headline.underProb * 100).toFixed(1)}%</span>
+        </div>
+      </div>
+      <div className="rt-lines">
+        {runTotal.lines.map((l) => (
+          <div key={l.line} className="rt-line-row">
+            <span className="rt-line-key">{l.line}점</span>
+            <span className="rt-line-over">↑{(l.overProb * 100).toFixed(0)}%</span>
+            <span className="rt-line-under">↓{(l.underProb * 100).toFixed(0)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 

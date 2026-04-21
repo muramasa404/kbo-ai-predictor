@@ -132,6 +132,47 @@ body { overflow-x: hidden; }
 .starter-label { display: inline-flex; align-items: center; gap: 3px; margin-top: 2px; font-size: 11px; color: var(--text-3); font-weight: 500; letter-spacing: -0.2px; }
 .starter-icon { font-size: 12px !important; color: var(--blue); }
 
+/* ═══ v5.3 — HCI Trust Strip (honest model accuracy) ═══ */
+.trust-strip {
+  display: flex; align-items: center; gap: 10px;
+  margin: 12px -16px 0; padding: 12px 16px;
+  background: var(--white);
+  border-top: 0.5px solid rgba(0,0,0,0.06);
+  border-bottom: 0.5px solid rgba(0,0,0,0.06);
+}
+.trust-icon { font-size: 22px !important; }
+.trust-body { display: flex; flex-direction: column; gap: 2px; letter-spacing: -0.2px; flex: 1; }
+.trust-title { font-size: 13px; font-weight: 600; color: var(--text-1); }
+.trust-title strong { font-weight: 800; }
+.trust-sub { font-size: 11px; color: var(--text-3); font-weight: 500; }
+.trust-good .trust-icon { color: var(--green); }
+.trust-good .trust-title strong { color: var(--green); }
+.trust-ok .trust-icon { color: var(--blue); }
+.trust-ok .trust-title strong { color: var(--blue); }
+.trust-weak .trust-icon { color: var(--red); }
+.trust-weak .trust-title strong { color: var(--red); }
+.trust-pending .trust-icon { color: var(--text-3); }
+
+/* ═══ v5.3 — Run Total (over/under) panel ═══ */
+.rt-panel {
+  margin-top: 14px; padding: 12px; border-radius: 11px;
+  background: var(--gray-bg); border: 1px solid rgba(0,0,0,0.04);
+}
+.rt-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.rt-icon { font-size: 16px !important; color: var(--blue); }
+.rt-label { flex: 1; font-size: 12px; font-weight: 700; color: var(--text-1); letter-spacing: -0.2px; }
+.rt-expected { font-size: 13px; font-weight: 700; color: var(--blue); letter-spacing: -0.2px; }
+.rt-headline { margin-bottom: 10px; }
+.rt-line { display: block; font-size: 11px; font-weight: 600; color: var(--text-3); margin-bottom: 4px; letter-spacing: -0.2px; }
+.rt-bar-bg { height: 6px; border-radius: 980px; background: rgba(0,0,0,0.06); overflow: hidden; }
+.rt-bar-fg { height: 100%; border-radius: 980px; transition: width 0.5s ease; }
+.rt-bar-row { display: flex; justify-content: space-between; margin-top: 4px; font-size: 11px; font-weight: 600; color: var(--text-2); letter-spacing: -0.2px; }
+.rt-lines { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.rt-line-row { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 2px; border-radius: 6px; background: var(--white); font-size: 10px; letter-spacing: -0.2px; }
+.rt-line-key { font-weight: 700; color: var(--text-1); font-size: 11px; }
+.rt-line-over { color: var(--blue); font-weight: 600; }
+.rt-line-under { color: var(--red); font-weight: 600; }
+
 .ai-toggle {
   display: flex; align-items: center; gap: 6px; width: 100%;
   margin-top: 14px; padding: 10px 0 0; border: none; border-top: 1px solid rgba(0,0,0,0.05);

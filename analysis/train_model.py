@@ -1,31 +1,24 @@
 """
-KBO AI Predictor — ML training + live inference
-kap_model_v5.0.0: XGBoost trained on REAL KBO game outcomes (no more
-synthetic labels), applied to today's Naver schedule + announced starters,
-written directly to Supabase.
+KBO AI Predictor — ML training + live multi-model inference
+kap_model_v5.3.0: v5.0 shipped a single W/L classifier trained on real
+outcomes. v5.3 runs a second head — an XGBoost regressor on total runs —
+so we can express over/under probabilities at common KBO lines (6.5, 7.5,
+8.5, 9.5, 10.5 runs). Both heads share the same 22-feature vector + real
+historical labels; extras are persisted in Prediction.extrasJson (JSONB
+column auto-created on first run).
 
-Flow:
-  1. Connect to Supabase via DATABASE_URL (psycopg2).
-  2. Collect past KBO game results from Naver (2025-2026 seasons).
-     Upsert Game + GameResult rows with real scores.
-  3. Query team rank, hitter season stats, pitcher season stats.
-  4. Build per-team feature dict (OPS/AVG/ERA/WHIP/K9/BB9/FIP).
-  5. Load training data: all Games with GameResult.
-     Label = 1 if home won, 0 otherwise.
-     Feature = team-strength diff vector (current-season proxy).
-  6. Train XGBoost on REAL labels (fall back to synthetic only if <50 games).
-  7. Fetch today's KBO games + announced starters from Naver.
-  8. For each game, build feature vector + predict_proba.
-  9. Upsert Game (sourceGameKey = Naver gameId) + INSERT Prediction.
+Planned in v5.3.1+: first-inning lead classifier, per-player prop models
+(hits/HR/Ks) once PlayerGameLog backfill from Naver is online.
 
 Limitations documented in description:
   - Features use CURRENT-season stats as a proxy for state-at-game-time.
-    Pure retroactive features require per-date snapshots; those will
-    arrive when backfill-naver-schedule.ts is run against DailyTeamRank
-    history.
+  - totalRuns regression uses the same (team-strength) vector; run totals
+    are noisier than W/L but the model still captures "offensive teams vs
+    weak pitching → high totals" plus park-neutral baselines.
 """
 from __future__ import annotations
 import json
+import math
 import os
 import re
 import ssl
@@ -40,10 +33,11 @@ import xgboost as xgb
 from psycopg2.extras import Json
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, brier_score_loss
+from sklearn.metrics import accuracy_score, brier_score_loss, mean_absolute_error
 from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
 
-MODEL_VERSION = 'kap_model_v5.0.0'
+MODEL_VERSION = 'kap_model_v5.3.0'
+RUN_TOTAL_LINES = [6.5, 7.5, 8.5, 9.5, 10.5]
 KST = timezone(timedelta(hours=9))
 TODAY_KST = datetime.now(KST).strftime('%Y-%m-%d')
 DATABASE_URL = os.environ.get('DATABASE_URL')
@@ -385,29 +379,32 @@ def build_feature_vector(hf: dict, af: dict) -> list[float]:
     ]
 
 
-def load_real_training_data(cur, team_features: dict) -> tuple[np.ndarray, np.ndarray]:
-    """Fetch completed games from DB; label = 1 if home won, 0 otherwise.
-    Draws are dropped (rare in KBO, ~3% of games)."""
+def load_real_training_data(cur, team_features: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Fetch completed games from DB.
+    Returns (X, y_winloss, y_runtotal).
+      y_winloss: 1 if home won, 0 otherwise (draws dropped)
+      y_runtotal: homeScore + awayScore (draws included — total still meaningful)
+    """
     cur.execute(
-        '''SELECT ht."nameKo", at."nameKo", gr."homeScore", gr."awayScore"
+        '''SELECT ht."nameKo", at."nameKo", gr."homeScore", gr."awayScore", gr."isDraw"
            FROM "Game" g
            JOIN "GameResult" gr ON gr."gameId" = g.id
            JOIN "Team" ht ON ht.id = g."homeTeamId"
            JOIN "Team" at ON at.id = g."awayTeamId"
-           WHERE gr."homeScore" IS NOT NULL AND gr."awayScore" IS NOT NULL
-             AND gr."isDraw" = FALSE'''
+           WHERE gr."homeScore" IS NOT NULL AND gr."awayScore" IS NOT NULL'''
     )
     rows = cur.fetchall()
-    X: list[list[float]] = []
-    y: list[int] = []
-    for home_name, away_name, hs, as_ in rows:
+    X_cls: list[list[float]] = []; y_cls: list[int] = []
+    X_reg: list[list[float]] = []; y_reg: list[float] = []
+    for home_name, away_name, hs, as_, is_draw in rows:
         if home_name not in team_features or away_name not in team_features:
             continue
         features = build_feature_vector(team_features[home_name], team_features[away_name])
-        label = 1 if int(hs) > int(as_) else 0
-        X.append(features)
-        y.append(label)
-    return np.array(X), np.array(y)
+        total = int(hs) + int(as_)
+        X_reg.append(features); y_reg.append(float(total))
+        if not is_draw:
+            X_cls.append(features); y_cls.append(1 if int(hs) > int(as_) else 0)
+    return (np.array(X_cls), np.array(y_cls), np.array(X_reg), np.array(y_reg))
 
 
 def build_synthetic_training_data(team_features: dict) -> tuple[np.ndarray, np.ndarray]:
@@ -443,6 +440,10 @@ conn = psycopg2.connect(DATABASE_URL)
 conn.autocommit = False
 cur = conn.cursor()
 
+# v5.3: ensure extrasJson column exists on Prediction (idempotent)
+cur.execute('''ALTER TABLE "Prediction" ADD COLUMN IF NOT EXISTS "extrasJson" JSONB''')
+conn.commit()
+
 cur.execute('SELECT id, "nameKo" FROM "Team"')
 team_id_by_name = {name: tid for tid, name in cur.fetchall()}
 print(f'Teams loaded: {len(team_id_by_name)}')
@@ -462,12 +463,12 @@ if len(team_features) < 2:
     sys.exit(1)
 
 # 3. Load training data (real preferred, synthetic fallback)
-X_real, y_real = load_real_training_data(cur, team_features)
-print(f'\n[3/4] Real-outcome games available: {len(X_real)}')
+X_real, y_real, X_reg_real, y_reg_real = load_real_training_data(cur, team_features)
+print(f'\n[3/4] Real-outcome games available: W/L={len(X_real)}, run-total={len(X_reg_real)}')
 label_mode = 'real'
 if len(X_real) >= 50 and len(set(y_real.tolist())) == 2:
     X, y = X_real, y_real
-    print(f'      Using REAL labels (home win rate: {np.mean(y):.3f})')
+    print(f'      Using REAL labels (home win rate: {np.mean(y):.3f}, avg total runs: {np.mean(y_reg_real):.2f})')
 else:
     X, y = build_synthetic_training_data(team_features)
     label_mode = 'synthetic'
@@ -512,6 +513,47 @@ final_model = xgb.XGBClassifier(
     random_state=42, eval_metric='logloss',
 )
 final_model.fit(X, y)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v5.3 addition — run total regressor (XGBoost regression on homeScore+awayScore)
+# ─────────────────────────────────────────────────────────────────────────────
+run_total_model = None
+run_total_std = 3.2  # league-wide residual std (reasonable default for KBO ~8.5 runs/game)
+run_total_mae = None
+if len(X_reg_real) >= 50:
+    rt_model = xgb.XGBRegressor(
+        n_estimators=300, max_depth=5, learning_rate=0.06,
+        subsample=0.8, colsample_bytree=0.8,
+        random_state=42, objective='reg:squarederror',
+    )
+    # Hold-out split for honest MAE/std estimate
+    if len(X_reg_real) >= 100:
+        Xr_tr, Xr_te, yr_tr, yr_te = train_test_split(X_reg_real, y_reg_real, test_size=0.2, random_state=42)
+        rt_model.fit(Xr_tr, yr_tr)
+        preds = rt_model.predict(Xr_te)
+        run_total_mae = float(mean_absolute_error(yr_te, preds))
+        residuals = yr_te - preds
+        run_total_std = float(max(np.std(residuals), 2.0))  # floor at 2.0 to avoid overconfident over/under
+        print(f'Run-total regressor: MAE={run_total_mae:.2f} runs, residual std={run_total_std:.2f}')
+    # Refit on all data for deployment
+    rt_model.fit(X_reg_real, y_reg_real)
+    run_total_model = rt_model
+else:
+    print(f'Run-total regressor: insufficient real data ({len(X_reg_real)}) — skipping, will emit neutral over/under')
+
+
+def normal_cdf(x: float, mean: float, std: float) -> float:
+    if std <= 0: return 0.5
+    return 0.5 * (1.0 + math.erf((x - mean) / (std * math.sqrt(2))))
+
+
+def over_under_probs(expected_total: float, std: float) -> list[dict]:
+    """For each KBO-realistic run line, compute P(total > line)."""
+    out = []
+    for line in RUN_TOTAL_LINES:
+        p_over = 1.0 - normal_cdf(line, expected_total, std)
+        out.append({'line': line, 'overProb': round(p_over, 4), 'underProb': round(1 - p_over, 4)})
+    return out
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Live inference on today's real Naver KBO games
@@ -604,11 +646,37 @@ for g in today_games:
         '''DELETE FROM "Prediction" WHERE "gameId" = %s AND "predictedAt"::date = CURRENT_DATE''',
         (db_game_id,),
     )
+    # v5.3 — run total over/under
+    extras: dict = {}
+    if run_total_model is not None:
+        expected_total = float(run_total_model.predict([features])[0])
+        expected_total = max(3.0, min(18.0, expected_total))  # KBO realistic envelope
+        ou_rows = over_under_probs(expected_total, run_total_std)
+        extras['runTotal'] = {
+            'expected': round(expected_total, 2),
+            'stdev': round(run_total_std, 2),
+            'lines': ou_rows,
+            'mae': run_total_mae,
+        }
+        # Surface a headline line (the one closest to expected) in reasons
+        closest = min(ou_rows, key=lambda r: abs(r['line'] - expected_total))
+        reasons.append(
+            f'[득점 합계 예측] 예상 {expected_total:.1f}점 · {closest["line"]}점 over {closest["overProb"] * 100:.1f}% / under {closest["underProb"] * 100:.1f}%'
+        )
+    extras['confidence'] = conf
+    extras['modelFamily'] = {
+        'winLossClassifier': 'XGBoost(200, d5, lr0.08)',
+        'runTotalRegressor': 'XGBoost(300, d5, lr0.06)' if run_total_model else 'disabled',
+        'labelMode': label_mode,
+    }
+
     cur.execute(
         '''INSERT INTO "Prediction" (id, "gameId", "modelVersion", "predictedAt",
-                                     "homeWinProb", "awayWinProb", "confidenceGrade", "topReasonsJson")
-           VALUES (%s, %s, %s, NOW(), %s, %s, %s, %s)''',
-        (gen_id(), db_game_id, MODEL_VERSION, round(prob, 4), round(1 - prob, 4), conf, Json(reasons)),
+                                     "homeWinProb", "awayWinProb", "confidenceGrade",
+                                     "topReasonsJson", "extrasJson")
+           VALUES (%s, %s, %s, NOW(), %s, %s, %s, %s, %s)''',
+        (gen_id(), db_game_id, MODEL_VERSION, round(prob, 4), round(1 - prob, 4), conf,
+         Json(reasons), Json(extras)),
     )
     written += 1
     print(f'  {away_name} @ {home_name}: {prob * 100:.1f}% [{conf}]')
