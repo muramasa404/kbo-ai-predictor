@@ -11,6 +11,12 @@ export interface RunTotalPrediction {
   lines: OverUnderLine[]
 }
 
+export interface FirstInningLeadPrediction {
+  homeLeadProb: number
+  awayLeadProb: number
+  holdoutAccuracy?: number | null
+}
+
 export interface PredictionCardData {
   id: string
   gameTime: string
@@ -23,6 +29,7 @@ export interface PredictionCardData {
   homeStarter?: { name: string; era: string; record: string } | null
   awayStarter?: { name: string; era: string; record: string } | null
   runTotal?: RunTotalPrediction | null
+  firstInningLead?: FirstInningLeadPrediction | null
 }
 
 export interface MetricCardData {

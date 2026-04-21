@@ -275,6 +275,7 @@ function buildPrediction(
     homeStarter,
     awayStarter,
     runTotal: usingMl ? extractRunTotal(ml?.extrasJson) : null,
+    firstInningLead: usingMl ? extractFirstInningLead(ml?.extrasJson) : null,
   }
 }
 
@@ -318,6 +319,16 @@ function computeModelTrust(rows: TrustRow[]) {
   const fmt = (d: Date | null) => d ? new Intl.DateTimeFormat('ko-KR', { month: '2-digit', day: '2-digit', timeZone: 'Asia/Seoul' }).format(d) : '-'
   const windowLabel = `${fmt(oldestDate)} ~ ${fmt(newestDate)}`
   return { sampleSize: scored, accuracy, brierScore, windowLabel, modelVersion: latestVersion }
+}
+
+function extractFirstInningLead(value: unknown) {
+  if (!value || typeof value !== 'object') return null
+  const v = value as { firstInningLead?: { homeLeadProb?: unknown; awayLeadProb?: unknown; holdoutAccuracy?: unknown } }
+  const fi = v.firstInningLead
+  if (!fi || typeof fi !== 'object') return null
+  const h = toNum(fi.homeLeadProb); const a = toNum(fi.awayLeadProb)
+  if (h == null || a == null) return null
+  return { homeLeadProb: h, awayLeadProb: a, holdoutAccuracy: toNum(fi.holdoutAccuracy) }
 }
 
 function extractRunTotal(value: unknown) {

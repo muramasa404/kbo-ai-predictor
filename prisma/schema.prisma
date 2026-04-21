@@ -195,18 +195,20 @@ model Game {
 }
 
 model GameResult {
-  id            String   @id @default(cuid())
-  gameId        String   @unique
-  homeScore     Int?
-  awayScore     Int?
-  winnerTeamId  String?
-  loserTeamId   String?
-  isDraw        Boolean  @default(false)
-  endedAt       DateTime?
-  summaryText   String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  game          Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  id                   String   @id @default(cuid())
+  gameId               String   @unique
+  homeScore            Int?
+  awayScore            Int?
+  winnerTeamId         String?
+  loserTeamId          String?
+  isDraw               Boolean  @default(false)
+  firstInningHomeScore Int?
+  firstInningAwayScore Int?
+  endedAt              DateTime?
+  summaryText          String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  game                 Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
 }
 
 model GameBroadcast {

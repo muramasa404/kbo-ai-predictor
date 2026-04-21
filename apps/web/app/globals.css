@@ -153,6 +153,19 @@ body { overflow-x: hidden; }
 .trust-weak .trust-title strong { color: var(--red); }
 .trust-pending .trust-icon { color: var(--text-3); }
 
+/* ═══ v5.3.1 — First inning lead panel ═══ */
+.fi-panel {
+  margin-top: 8px; padding: 10px 12px; border-radius: 11px;
+  background: var(--gray-bg); border: 1px solid rgba(0,0,0,0.04);
+}
+.fi-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.fi-icon { font-size: 16px !important; color: var(--blue); }
+.fi-label { flex: 1; font-size: 12px; font-weight: 700; color: var(--text-1); letter-spacing: -0.2px; }
+.fi-lean { font-size: 11px; font-weight: 700; color: var(--blue); letter-spacing: -0.2px; }
+.fi-bar-bg { height: 6px; border-radius: 980px; background: rgba(255,69,58,0.35); overflow: hidden; }
+.fi-bar-fg { height: 100%; border-radius: 980px; background: var(--blue); transition: width 0.5s ease; }
+.fi-row { display: flex; justify-content: space-between; margin-top: 4px; font-size: 11px; font-weight: 600; color: var(--text-2); letter-spacing: -0.2px; }
+
 /* ═══ v5.3 — Run Total (over/under) panel ═══ */
 .rt-panel {
   margin-top: 14px; padding: 12px; border-radius: 11px;

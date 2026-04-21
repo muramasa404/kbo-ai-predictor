@@ -19,7 +19,7 @@ interface DashboardData {
   date?: string
   hero: { title: string; copy: string; chips: string[] }
   modelTrust?: { sampleSize: number; accuracy: number | null; brierScore: number | null; windowLabel: string; modelVersion: string | null }
-  predictions: Array<{ id: string; gameTime: string; homeTeam: string; awayTeam: string; favoredTeam: string; winProbability: number; confidence: string; topReasons: string[]; homeStarter?: { name: string; era: string; record: string } | null; awayStarter?: { name: string; era: string; record: string } | null; runTotal?: { expected: number; stdev: number; mae?: number | null; lines: Array<{ line: number; overProb: number; underProb: number }> } | null }>
+  predictions: Array<{ id: string; gameTime: string; homeTeam: string; awayTeam: string; favoredTeam: string; winProbability: number; confidence: string; topReasons: string[]; homeStarter?: { name: string; era: string; record: string } | null; awayStarter?: { name: string; era: string; record: string } | null; runTotal?: { expected: number; stdev: number; mae?: number | null; lines: Array<{ line: number; overProb: number; underProb: number }> } | null; firstInningLead?: { homeLeadProb: number; awayLeadProb: number; holdoutAccuracy?: number | null } | null }>
   teamRanks: Array<{ rank: number; teamName: string; wins: number; losses: number; draws: number; winPct: string; gamesBack: string; last10: string; streak: string }>
   allHitters: Array<{ rank: number; playerName: string; teamName: string; avg: string; games: number; hits: number; homeRuns: number; rbi: number }>
   allPitchers: Array<{ rank: number; playerName: string; teamName: string; era: string; games: number; wins: number; losses: number; strikeOuts: number; whip: string }>
@@ -209,6 +209,7 @@ function MatchCard({ p, index }: { p: DashboardData['predictions'][number]; inde
       </div>
 
       {p.runTotal && p.runTotal.lines.length > 0 && <RunTotalPanel runTotal={p.runTotal} />}
+      {p.firstInningLead && <FirstInningPanel fi={p.firstInningLead} homeTeam={p.homeTeam} awayTeam={p.awayTeam} /> }
 
       <button type="button" className="ai-toggle" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
         <span className="material-icons-round ai-toggle-spark">auto_awesome</span>
@@ -291,6 +292,33 @@ function RunTotalPanel({ runTotal }: { runTotal: RunTotal }) {
             <span className="rt-line-under">↓{(l.underProb * 100).toFixed(0)}%</span>
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════ */
+/* FIRST INNING LEAD panel                 */
+/* ═══════════════════════════════════════ */
+type FirstInning = NonNullable<DashboardData['predictions'][number]['firstInningLead']>
+function FirstInningPanel({ fi, homeTeam, awayTeam }: { fi: FirstInning; homeTeam: string; awayTeam: string }) {
+  const homePct = Math.round(fi.homeLeadProb * 100)
+  const awayPct = 100 - homePct
+  const leanHome = homePct >= 50
+  const accNote = fi.holdoutAccuracy != null ? ` · 검증 정확도 ${(fi.holdoutAccuracy * 100).toFixed(0)}%` : ''
+  return (
+    <div className="fi-panel">
+      <div className="fi-head">
+        <span className="material-icons-round fi-icon">flag</span>
+        <span className="fi-label">1회 리드 예측{accNote}</span>
+        <span className="fi-lean">{leanHome ? homeTeam : awayTeam} 유리</span>
+      </div>
+      <div className="fi-bar-bg">
+        <div className="fi-bar-fg" style={{ width: `${homePct}%` }} />
+      </div>
+      <div className="fi-row">
+        <span>{awayTeam} {awayPct}%</span>
+        <span>{homeTeam} {homePct}%</span>
       </div>
     </div>
   )

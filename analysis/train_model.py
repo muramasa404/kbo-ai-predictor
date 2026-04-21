@@ -36,7 +36,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, brier_score_loss, mean_absolute_error
 from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
 
-MODEL_VERSION = 'kap_model_v5.3.0'
+MODEL_VERSION = 'kap_model_v5.3.1'
 RUN_TOTAL_LINES = [6.5, 7.5, 8.5, 9.5, 10.5]
 KST = timezone(timedelta(hours=9))
 TODAY_KST = datetime.now(KST).strftime('%Y-%m-%d')
@@ -87,6 +87,29 @@ def fetch_naver_preview(game_id: str) -> dict:
         return data.get('result', {}).get('previewData', {}) or {}
     except Exception:
         return {}
+
+
+def fetch_first_inning_score(game_id: str) -> tuple[int | None, int | None]:
+    """Return (home_first_inning_runs, away_first_inning_runs) for a completed
+    game via Naver textRelay. None if the game didn't finish the 1st inning
+    or the API is unavailable."""
+    url = f'https://api-gw.sports.naver.com/schedule/games/{game_id}/relay'
+    try:
+        data = naver_fetch_json(url, timeout=10)
+        innings = data.get('result', {}).get('textRelayData', {}).get('inningScore', {}) or {}
+        home = innings.get('home', {}) or {}
+        away = innings.get('away', {}) or {}
+
+        def _parse(v: object) -> int | None:
+            if v is None: return None
+            s = str(v).strip()
+            if not s or s == '-': return None
+            try: return int(s)
+            except ValueError: return None
+
+        return _parse(home.get('1')), _parse(away.get('1'))
+    except Exception:
+        return None, None
 
 
 def parse_starter(starter: dict | None) -> dict | None:
@@ -197,6 +220,19 @@ def collect_historical_games(cur, team_id_by_name: dict[str, str]) -> int:
                 )
                 total_written += 1
                 year_written += 1
+
+                # v5.3.1: backfill first-inning score (idempotent — only fetches if NULL)
+                cur.execute('SELECT "firstInningHomeScore" FROM "GameResult" WHERE "gameId" = %s', (db_game_id,))
+                existing_fi = cur.fetchone()
+                if existing_fi is not None and existing_fi[0] is None:
+                    fi_home, fi_away = fetch_first_inning_score(g['gameId'])
+                    if fi_home is not None and fi_away is not None:
+                        cur.execute(
+                            '''UPDATE "GameResult" SET "firstInningHomeScore" = %s, "firstInningAwayScore" = %s, "updatedAt" = NOW()
+                               WHERE "gameId" = %s''',
+                            (fi_home, fi_away, db_game_id),
+                        )
+                    time.sleep(0.05)
 
             # Commit every 30 days to avoid losing progress on long runs
             if total_requests % 30 == 0:
@@ -379,14 +415,18 @@ def build_feature_vector(hf: dict, af: dict) -> list[float]:
     ]
 
 
-def load_real_training_data(cur, team_features: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def load_real_training_data(cur, team_features: dict):
     """Fetch completed games from DB.
-    Returns (X, y_winloss, y_runtotal).
-      y_winloss: 1 if home won, 0 otherwise (draws dropped)
-      y_runtotal: homeScore + awayScore (draws included — total still meaningful)
+    Returns a dict with:
+      X_cls, y_cls   : W/L classification (1 if home won; draws dropped)
+      X_reg, y_reg   : run-total regression (draws included)
+      X_fi,  y_fi    : 1st-inning lead classification (1 if home led after inning 1)
+                       Games without first-inning scores are dropped from this head.
     """
     cur.execute(
-        '''SELECT ht."nameKo", at."nameKo", gr."homeScore", gr."awayScore", gr."isDraw"
+        '''SELECT ht."nameKo", at."nameKo",
+                  gr."homeScore", gr."awayScore", gr."isDraw",
+                  gr."firstInningHomeScore", gr."firstInningAwayScore"
            FROM "Game" g
            JOIN "GameResult" gr ON gr."gameId" = g.id
            JOIN "Team" ht ON ht.id = g."homeTeamId"
@@ -396,7 +436,8 @@ def load_real_training_data(cur, team_features: dict) -> tuple[np.ndarray, np.nd
     rows = cur.fetchall()
     X_cls: list[list[float]] = []; y_cls: list[int] = []
     X_reg: list[list[float]] = []; y_reg: list[float] = []
-    for home_name, away_name, hs, as_, is_draw in rows:
+    X_fi:  list[list[float]] = []; y_fi:  list[int] = []
+    for home_name, away_name, hs, as_, is_draw, fi_home, fi_away in rows:
         if home_name not in team_features or away_name not in team_features:
             continue
         features = build_feature_vector(team_features[home_name], team_features[away_name])
@@ -404,7 +445,13 @@ def load_real_training_data(cur, team_features: dict) -> tuple[np.ndarray, np.nd
         X_reg.append(features); y_reg.append(float(total))
         if not is_draw:
             X_cls.append(features); y_cls.append(1 if int(hs) > int(as_) else 0)
-    return (np.array(X_cls), np.array(y_cls), np.array(X_reg), np.array(y_reg))
+        if fi_home is not None and fi_away is not None and int(fi_home) != int(fi_away):
+            X_fi.append(features); y_fi.append(1 if int(fi_home) > int(fi_away) else 0)
+    return {
+        'X_cls': np.array(X_cls), 'y_cls': np.array(y_cls),
+        'X_reg': np.array(X_reg), 'y_reg': np.array(y_reg),
+        'X_fi':  np.array(X_fi),  'y_fi':  np.array(y_fi),
+    }
 
 
 def build_synthetic_training_data(team_features: dict) -> tuple[np.ndarray, np.ndarray]:
@@ -463,8 +510,11 @@ if len(team_features) < 2:
     sys.exit(1)
 
 # 3. Load training data (real preferred, synthetic fallback)
-X_real, y_real, X_reg_real, y_reg_real = load_real_training_data(cur, team_features)
-print(f'\n[3/4] Real-outcome games available: W/L={len(X_real)}, run-total={len(X_reg_real)}')
+training = load_real_training_data(cur, team_features)
+X_real, y_real       = training['X_cls'], training['y_cls']
+X_reg_real, y_reg_real = training['X_reg'], training['y_reg']
+X_fi_real,  y_fi_real  = training['X_fi'],  training['y_fi']
+print(f'\n[3/4] Real-outcome games available: W/L={len(X_real)}, run-total={len(X_reg_real)}, 1st-inning={len(X_fi_real)}')
 label_mode = 'real'
 if len(X_real) >= 50 and len(set(y_real.tolist())) == 2:
     X, y = X_real, y_real
@@ -540,6 +590,31 @@ if len(X_reg_real) >= 50:
     run_total_model = rt_model
 else:
     print(f'Run-total regressor: insufficient real data ({len(X_reg_real)}) — skipping, will emit neutral over/under')
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v5.3.1 addition — 1st-inning lead classifier
+#   Training label: 1 if home led after inning 1 (ties dropped).
+#   Useful because 1st-inning lead is a specific prop market and it's driven
+#   more by starters + top-of-order hitters than by bullpen depth.
+# ─────────────────────────────────────────────────────────────────────────────
+first_inning_model = None
+first_inning_acc = None
+if len(X_fi_real) >= 50 and len(set(y_fi_real.tolist())) == 2:
+    fi_model = xgb.XGBClassifier(
+        n_estimators=180, max_depth=4, learning_rate=0.07,
+        subsample=0.85, colsample_bytree=0.8,
+        random_state=42, eval_metric='logloss',
+    )
+    if len(X_fi_real) >= 100:
+        Xf_tr, Xf_te, yf_tr, yf_te = train_test_split(X_fi_real, y_fi_real, test_size=0.2, random_state=42, stratify=y_fi_real)
+        fi_model.fit(Xf_tr, yf_tr)
+        fp = fi_model.predict_proba(Xf_te)[:, 1]
+        first_inning_acc = float(accuracy_score(yf_te, (fp >= 0.5).astype(int)))
+        print(f'1st-inning lead classifier: hold-out acc={first_inning_acc:.4f}  (home-lead rate in test: {np.mean(yf_te):.3f})')
+    fi_model.fit(X_fi_real, y_fi_real)
+    first_inning_model = fi_model
+else:
+    print(f'1st-inning lead classifier: insufficient decisive 1st innings ({len(X_fi_real)}) — skipping')
 
 
 def normal_cdf(x: float, mean: float, std: float) -> float:
@@ -663,10 +738,24 @@ for g in today_games:
         reasons.append(
             f'[득점 합계 예측] 예상 {expected_total:.1f}점 · {closest["line"]}점 over {closest["overProb"] * 100:.1f}% / under {closest["underProb"] * 100:.1f}%'
         )
+    # v5.3.1 — 1st-inning lead
+    if first_inning_model is not None:
+        fi_prob = float(first_inning_model.predict_proba([features])[0][1])
+        fi_prob = max(0.08, min(0.92, fi_prob))
+        extras['firstInningLead'] = {
+            'homeLeadProb': round(fi_prob, 4),
+            'awayLeadProb': round(1 - fi_prob, 4),
+            'holdoutAccuracy': first_inning_acc,
+        }
+        reasons.append(
+            f'[1회 리드 예측] 홈 우세 {fi_prob * 100:.1f}% / 원정 우세 {(1 - fi_prob) * 100:.1f}%'
+        )
+
     extras['confidence'] = conf
     extras['modelFamily'] = {
         'winLossClassifier': 'XGBoost(200, d5, lr0.08)',
         'runTotalRegressor': 'XGBoost(300, d5, lr0.06)' if run_total_model else 'disabled',
+        'firstInningClassifier': 'XGBoost(180, d4, lr0.07)' if first_inning_model else 'disabled',
         'labelMode': label_mode,
     }
 
