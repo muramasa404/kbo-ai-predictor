@@ -8,12 +8,12 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "next": "15.5.15",
-    "react": "19.0.0",
-    "react-dom": "19.0.0",
-    "@prisma/client": "6.19.3",
     "@prisma/adapter-pg": "7.7.0",
-    "pg": "8.20.0"
+    "@prisma/client": "^6.19.3",
+    "next": "15.5.15",
+    "pg": "8.20.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
   },
   "devDependencies": {
     "@types/node": "22.13.14",

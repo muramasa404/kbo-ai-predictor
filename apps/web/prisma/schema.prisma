@@ -530,6 +530,7 @@ model Prediction {
   awayWinProb      Decimal  @db.Decimal(6, 3)
   confidenceGrade  String?
   topReasonsJson   Json?
+  extrasJson       Json?
   createdAt        DateTime @default(now())
   game             Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
 
