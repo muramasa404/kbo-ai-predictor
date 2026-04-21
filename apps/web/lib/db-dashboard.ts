@@ -293,12 +293,17 @@ function buildPrediction(
   }
 }
 
-/** Pull the 10 most recent KBO game dates (today always first) plus today's
- * date if it isn't yet in the DB (e.g. no games finalised yet). Includes the
- * game count per date and whether every game has a GameResult. */
-async function fetchAvailableDates(currentDate: string) {
+/** Pull the 10 most recent KBO game dates plus the actual calendar today (KST)
+ * if it isn't yet in the DB. `isToday` compares the pill date to the real
+ * calendar today (NOT the currently selected date) so switching dates never
+ * mislabels another pill as "오늘". */
+async function fetchAvailableDates(_currentDate: string) {
+  const todayKst = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date())
+
   type Row = { gameDate: Date | null; game_count: bigint | number; result_count: bigint | number }
-  const rows = (await prisma.$queryRaw<Row[]>`
+  const rows = await prisma.$queryRaw<Row[]>`
     SELECT g."gameDate" AS "gameDate",
            COUNT(*) AS game_count,
            COUNT(gr.id) AS result_count
@@ -308,7 +313,7 @@ async function fetchAvailableDates(currentDate: string) {
     GROUP BY g."gameDate"
     ORDER BY g."gameDate" DESC
     LIMIT 10
-  `)
+  `
   const dates = rows.map((r) => {
     const d = r.gameDate ? new Date(r.gameDate) : new Date()
     const iso = new Intl.DateTimeFormat('sv-SE', {
@@ -320,12 +325,11 @@ async function fetchAvailableDates(currentDate: string) {
       date: iso,
       gameCount,
       hasResults: resultCount > 0 && resultCount === gameCount,
-      isToday: iso === currentDate,
+      isToday: iso === todayKst,
     }
   })
-  // Ensure today is always present (even if DB hasn't upserted yet)
   if (!dates.some((d) => d.isToday)) {
-    dates.unshift({ date: currentDate, gameCount: 0, hasResults: false, isToday: true })
+    dates.unshift({ date: todayKst, gameCount: 0, hasResults: false, isToday: true })
     if (dates.length > 10) dates.pop()
   }
   return dates

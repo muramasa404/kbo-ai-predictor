@@ -56,10 +56,12 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [statsSegment, setStatsSegment] = useState<'hitters' | 'pitchers'>('hitters')
   const [selectedDate, setSelectedDate] = useState<string>(() => todayKstString())
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
 
   const refresh = useCallback(async (date?: string) => {
     const d = date ?? selectedDate
+    setIsRefreshing(true)
     try {
       const [dashRes, dbRes] = await Promise.all([
         fetch(`/api/dashboard?date=${encodeURIComponent(d)}`),
@@ -69,6 +71,7 @@ export default function App() {
       if (dbRes.ok) setDbStatus(await dbRes.json())
     } catch { /* silent */ }
     setLoading(false)
+    setIsRefreshing(false)
   }, [selectedDate])
 
   useEffect(() => {
@@ -112,7 +115,7 @@ export default function App() {
       </header>
 
       <main className="content" ref={contentRef}>
-        {tab === 'home' && data && <HomeTab data={data} selectedDate={selectedDate} onSelectDate={onSelectDate} updatedAt={updatedAt} />}
+        {tab === 'home' && data && <HomeTab data={data} selectedDate={selectedDate} onSelectDate={onSelectDate} updatedAt={updatedAt} isRefreshing={isRefreshing} />}
         {tab === 'rank' && data && <RankTab ranks={data.teamRanks} />}
         {tab === 'stats' && data && <StatsTab hitters={data.allHitters} pitchers={data.allPitchers} segment={statsSegment} setSegment={setStatsSegment} />}
         {tab === 'system' && <SystemTab db={dbStatus} model={data?.modelInfo} updatedAt={updatedAt} />}
@@ -138,7 +141,7 @@ export default function App() {
 /* ═══════════════════════════════════════ */
 /* HOME TAB                                */
 /* ═══════════════════════════════════════ */
-function HomeTab({ data, selectedDate, onSelectDate, updatedAt }: { data: DashboardData; selectedDate: string; onSelectDate: (iso: string) => void; updatedAt: string }) {
+function HomeTab({ data, selectedDate, onSelectDate, updatedAt, isRefreshing }: { data: DashboardData; selectedDate: string; onSelectDate: (iso: string) => void; updatedAt: string; isRefreshing: boolean }) {
   return (
     <div className="fade-in">
       {/* Logo Hero — Norman: Visibility, brand identity first */}
@@ -151,7 +154,7 @@ function HomeTab({ data, selectedDate, onSelectDate, updatedAt }: { data: Dashbo
       </section>
 
       {data.availableDates && data.availableDates.length > 0 && (
-        <DatePicker dates={data.availableDates} selected={selectedDate} onSelect={onSelectDate} />
+        <DatePicker dates={data.availableDates} selected={selectedDate} onSelect={onSelectDate} isRefreshing={isRefreshing} />
       )}
 
       {data.modelTrust && <TrustStrip trust={data.modelTrust} />}
@@ -201,12 +204,19 @@ function MatchCard({ p, index }: { p: DashboardData['predictions'][number]; inde
           <span>LIVE · {p.statusInfo || '경기중'}</span>
         </div>
       )}
-      {p.liveState === 'final' && (
-        <div className="match-status final-tag">
-          <span className="material-icons-round final-check">check_circle</span>
-          <span>경기 종료</span>
-        </div>
-      )}
+      {p.liveState === 'final' && (() => {
+        const h = p.homeScore ?? 0; const a = p.awayScore ?? 0
+        if (h === a) return <div className="match-status final-tag"><span>무승부</span></div>
+        const actualWinner = h > a ? p.homeTeam : p.awayTeam
+        const hit = actualWinner === p.favoredTeam
+        return (
+          <div className={`match-status ${hit ? 'hit-tag' : 'miss-tag'}`}>
+            <span className="material-icons-round final-check">{hit ? 'check_circle' : 'cancel'}</span>
+            <span>{hit ? '적중' : '낙첨'}</span>
+            <span className="match-status-detail">· 예측 {p.favoredTeam} / 결과 {actualWinner}</span>
+          </div>
+        )
+      })()}
       {p.liveState === 'cancelled' && (
         <div className="match-status cancelled-tag">
           <span>{p.statusInfo || '취소 / 순연'}</span>
@@ -278,31 +288,36 @@ function MatchCard({ p, index }: { p: DashboardData['predictions'][number]; inde
 /* DATE PICKER — last-10-days pill strip   */
 /* ═══════════════════════════════════════ */
 type AvailableDate = NonNullable<DashboardData['availableDates']>[number]
-function DatePicker({ dates, selected, onSelect }: { dates: AvailableDate[]; selected: string; onSelect: (iso: string) => void }) {
+function DatePicker({ dates, selected, onSelect, isRefreshing }: { dates: AvailableDate[]; selected: string; onSelect: (iso: string) => void; isRefreshing: boolean }) {
+  const today = dates.find((d) => d.isToday) ?? null
+  const others = dates.filter((d) => !d.isToday)
+  const renderPill = (d: AvailableDate, sticky: boolean) => {
+    const parts = d.date.split('-')
+    const mm = parts[1]?.replace(/^0/, '')
+    const dd = parts[2]?.replace(/^0/, '')
+    const dow = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', weekday: 'short' }).format(new Date(d.date + 'T09:00:00+09:00'))
+    const active = d.date === selected
+    return (
+      <button
+        key={d.date}
+        type="button"
+        className={`date-pill ${active ? 'active' : ''} ${d.hasResults ? 'finalised' : ''} ${sticky ? 'sticky' : ''}`}
+        onClick={() => onSelect(d.date)}
+        aria-pressed={active}
+      >
+        {active && isRefreshing && <span className="date-pill-spinner" />}
+        <span className="date-pill-top">{d.isToday ? '오늘' : `${mm}/${dd}`}</span>
+        <span className="date-pill-bot">
+          {d.isToday ? `${mm}/${dd} (${dow})` : `(${dow}) · ${d.gameCount}경기`}
+        </span>
+      </button>
+    )
+  }
   return (
     <nav className="date-picker" aria-label="경기 날짜 선택">
       <div className="date-picker-scroll">
-        {dates.map((d) => {
-          const parts = d.date.split('-')
-          const mm = parts[1]?.replace(/^0/, '')
-          const dd = parts[2]?.replace(/^0/, '')
-          const dow = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', weekday: 'short' }).format(new Date(d.date + 'T09:00:00+09:00'))
-          const active = d.date === selected
-          return (
-            <button
-              key={d.date}
-              type="button"
-              className={`date-pill ${active ? 'active' : ''} ${d.hasResults ? 'finalised' : ''}`}
-              onClick={() => onSelect(d.date)}
-              aria-pressed={active}
-            >
-              <span className="date-pill-top">{d.isToday ? '오늘' : `${mm}/${dd}`}</span>
-              <span className="date-pill-bot">
-                {d.isToday ? `${mm}/${dd} (${dow})` : `(${dow}) · ${d.gameCount}경기`}
-              </span>
-            </button>
-          )
-        })}
+        {today && renderPill(today, true)}
+        {others.map((d) => renderPill(d, false))}
       </div>
     </nav>
   )

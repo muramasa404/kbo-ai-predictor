@@ -208,8 +208,13 @@ body { overflow-x: hidden; }
 .live-tag { background: rgba(255, 69, 58, 0.12); color: var(--red); }
 .live-tag .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); animation: pulse 1.4s infinite; }
 .final-tag { background: rgba(48, 209, 88, 0.12); color: var(--green); }
-.final-check { font-size: 12px !important; color: var(--green); }
+.final-check { font-size: 12px !important; color: inherit; }
 .cancelled-tag { background: rgba(0,0,0,0.06); color: var(--text-3); }
+
+/* Hit / miss badges — shown after FINAL when prediction vs actual can be compared */
+.hit-tag { background: rgba(48, 209, 88, 0.14); color: var(--green); }
+.miss-tag { background: rgba(255, 69, 58, 0.14); color: var(--red); }
+.match-status-detail { color: var(--text-3); font-weight: 500; letter-spacing: var(--track-caption); margin-left: 4px; }
 
 .match-card.live { box-shadow: 0 0 0 1.5px rgba(255, 69, 58, 0.25), var(--shadow-apple); }
 
@@ -255,6 +260,28 @@ body { overflow-x: hidden; }
 }
 .date-pill.active .date-pill-top { color: var(--white); }
 .date-pill.active .date-pill-bot { color: rgba(255,255,255,0.65); }
+
+/* Today pill stays pinned left while user scrolls through past dates */
+.date-pill.sticky {
+  position: sticky; left: 0; z-index: 2;
+  box-shadow: 6px 0 10px -8px rgba(0,0,0,0.15);
+}
+.date-pill.sticky:not(.active) {
+  background: var(--gray-bg);
+}
+
+/* Inline spinner overlayed on the active pill during refetch */
+.date-pill-spinner {
+  position: absolute; top: 3px; right: 5px;
+  width: 8px; height: 8px; border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.3);
+  border-top-color: var(--white);
+  animation: spin 0.7s linear infinite;
+}
+.date-pill:not(.active) .date-pill-spinner {
+  border-color: rgba(0,0,0,0.15); border-top-color: var(--text-1);
+}
+.date-pill { position: relative; }
 
 /* ═══ v5.3 — HCI Trust Strip (honest model accuracy) ═══ */
 .trust-strip {
