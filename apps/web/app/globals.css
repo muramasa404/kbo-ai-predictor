@@ -68,6 +68,21 @@ body { overflow-x: hidden; }
 @keyframes loaderPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
 @keyframes loaderDot { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.35; } 40% { transform: scale(1); opacity: 1; } }
 
+/* Nav overlay: date-switch intentional loading state — shows same cinematic
+   KBO.AI wordmark centred on black, tops every page element while the new
+   day's data is being fetched. */
+.nav-overlay {
+  position: fixed; inset: 0; z-index: 9998;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 22px;
+  background: rgba(0, 0, 0, 0.92);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: var(--white);
+  animation: loaderFade 0.2s ease both;
+}
+.nav-overlay .loader-brand { animation: loaderPulse 1.4s ease-in-out infinite; }
+
 /* ═══ STATUS BAR ═══ */
 /* DESIGN.md glass nav: translucent dark + saturated blur */
 .statusbar {
@@ -230,18 +245,18 @@ body { overflow-x: hidden; }
 
 /* ═══ v5.4 — Date picker (compact last-10-days pill strip) ═══ */
 .date-picker {
-  margin: 6px -16px 2px; padding: 4px 16px 0;
+  margin: 2px -16px 0; padding: 0 16px;
 }
 .date-picker-scroll {
-  display: flex; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch;
-  padding: 2px 0 4px; scroll-snap-type: x mandatory;
+  display: flex; gap: 5px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  padding: 4px 0 2px; scroll-snap-type: x mandatory;
   scrollbar-width: none;
 }
 .date-picker-scroll::-webkit-scrollbar { display: none; }
 .date-pill {
   flex: 0 0 auto; scroll-snap-align: start;
   display: flex; flex-direction: column; align-items: center; gap: 0;
-  padding: 5px 12px; min-width: 60px; line-height: 1.15;
+  padding: 4px 10px; min-width: 54px; line-height: 1.1;
   border: 1px solid rgba(0,0,0,0.08);
   background: var(--white); border-radius: var(--r-pill);
   font-family: inherit; cursor: pointer;
@@ -249,8 +264,8 @@ body { overflow-x: hidden; }
   -webkit-tap-highlight-color: transparent;
   letter-spacing: var(--track-caption);
 }
-.date-pill-top { font-size: 12px; font-weight: 800; color: var(--text-1); font-variant-numeric: tabular-nums; }
-.date-pill-bot { font-size: 9px; font-weight: 500; color: var(--text-3); margin-top: 1px; }
+.date-pill-top { font-size: 11px; font-weight: 800; color: var(--text-1); font-variant-numeric: tabular-nums; line-height: 1.2; }
+.date-pill-bot { font-size: 8px; font-weight: 500; color: var(--text-3); margin-top: 0; }
 .date-pill.finalised::after {
   content: ''; width: 3px; height: 3px; border-radius: 50%;
   background: var(--green); margin-top: 2px;

@@ -57,11 +57,13 @@ export default function App() {
   const [statsSegment, setStatsSegment] = useState<'hitters' | 'pitchers'>('hitters')
   const [selectedDate, setSelectedDate] = useState<string>(() => todayKstString())
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isNavigating, setIsNavigating] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
 
-  const refresh = useCallback(async (date?: string) => {
+  const refresh = useCallback(async (date?: string, opts?: { navigating?: boolean }) => {
     const d = date ?? selectedDate
     setIsRefreshing(true)
+    if (opts?.navigating) setIsNavigating(true)
     try {
       const [dashRes, dbRes] = await Promise.all([
         fetch(`/api/dashboard?date=${encodeURIComponent(d)}`),
@@ -72,6 +74,7 @@ export default function App() {
     } catch { /* silent */ }
     setLoading(false)
     setIsRefreshing(false)
+    setIsNavigating(false)
   }, [selectedDate])
 
   useEffect(() => {
@@ -81,10 +84,11 @@ export default function App() {
   }, [refresh])
 
   const onSelectDate = useCallback((iso: string) => {
+    if (iso === selectedDate) return
     setSelectedDate(iso)
-    void refresh(iso)
+    void refresh(iso, { navigating: true })
     contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
-  }, [refresh])
+  }, [refresh, selectedDate])
 
   // Norman: Constraints — scroll to top on tab change to prevent disorientation
   const switchTab = (t: Tab) => {
@@ -108,6 +112,14 @@ export default function App() {
 
   return (
     <div className="app">
+      {isNavigating && (
+        <div className="nav-overlay" aria-live="polite" aria-busy="true">
+          <h1 className="brand-wordmark loader-brand">
+            <span className="brand-kbo">KBO</span><span className="brand-ai">.AI</span>
+          </h1>
+          <div className="loader-dots"><span /><span /><span /></div>
+        </div>
+      )}
       <header className="statusbar">
         <span className="live-dot" />
         <span className="statusbar-text">LIVE</span>

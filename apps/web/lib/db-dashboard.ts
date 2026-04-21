@@ -314,21 +314,33 @@ async function fetchAvailableDates(_currentDate: string) {
     ORDER BY g."gameDate" DESC
     LIMIT 10
   `
-  const dates = rows.map((r) => {
-    const d = r.gameDate ? new Date(r.gameDate) : new Date()
-    const iso = new Intl.DateTimeFormat('sv-SE', {
-      timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
-    }).format(d)
-    const gameCount = Number(r.game_count ?? 0)
-    const resultCount = Number(r.result_count ?? 0)
-    return {
-      date: iso,
-      gameCount,
-      hasResults: resultCount > 0 && resultCount === gameCount,
-      isToday: iso === todayKst,
-    }
-  })
-  if (!dates.some((d) => d.isToday)) {
+  // KBO doesn't play Mondays — filter them out so the picker never shows a
+  // Monday pill (the click would reveal an empty schedule).
+  const isKstMonday = (iso: string) => {
+    const dow = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Seoul', weekday: 'short',
+    }).format(new Date(iso + 'T09:00:00+09:00'))
+    return dow === 'Mon'
+  }
+
+  const dates = rows
+    .map((r) => {
+      const d = r.gameDate ? new Date(r.gameDate) : new Date()
+      const iso = new Intl.DateTimeFormat('sv-SE', {
+        timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(d)
+      const gameCount = Number(r.game_count ?? 0)
+      const resultCount = Number(r.result_count ?? 0)
+      return {
+        date: iso,
+        gameCount,
+        hasResults: resultCount > 0 && resultCount === gameCount,
+        isToday: iso === todayKst,
+      }
+    })
+    .filter((d) => !isKstMonday(d.date))
+
+  if (!dates.some((d) => d.isToday) && !isKstMonday(todayKst)) {
     dates.unshift({ date: todayKst, gameCount: 0, hasResults: false, isToday: true })
     if (dates.length > 10) dates.pop()
   }
