@@ -19,7 +19,7 @@ interface DashboardData {
   date?: string
   hero: { title: string; copy: string; chips: string[] }
   modelTrust?: { sampleSize: number; accuracy: number | null; brierScore: number | null; windowLabel: string; modelVersion: string | null }
-  predictions: Array<{ id: string; gameTime: string; homeTeam: string; awayTeam: string; favoredTeam: string; winProbability: number; confidence: string; topReasons: string[]; homeStarter?: { name: string; era: string; record: string } | null; awayStarter?: { name: string; era: string; record: string } | null; runTotal?: { expected: number; stdev: number; mae?: number | null; lines: Array<{ line: number; overProb: number; underProb: number }> } | null; firstInningLead?: { homeLeadProb: number; awayLeadProb: number; holdoutAccuracy?: number | null } | null; playerProps?: { method: string; assumedAtBats: number; assumedStarterIP: number; homeHitters: Array<{ name: string; seasonAvg: number; hit1PlusProb: number; hit2PlusProb: number; hrProb: number }>; awayHitters: Array<{ name: string; seasonAvg: number; hit1PlusProb: number; hit2PlusProb: number; hrProb: number }>; homeStarterK: { name: string; seasonKPer9: number; expectedK: number; k5PlusProb: number; k7PlusProb: number } | null; awayStarterK: { name: string; seasonKPer9: number; expectedK: number; k5PlusProb: number; k7PlusProb: number } | null } | null; liveState?: 'scheduled' | 'live' | 'final' | 'cancelled'; statusInfo?: string; homeScore?: number | null; awayScore?: number | null }>
+  predictions: Array<{ id: string; gameTime: string; homeTeam: string; awayTeam: string; favoredTeam: string; winProbability: number; confidence: string; topReasons: string[]; homeStarter?: { name: string; era: string; record: string } | null; awayStarter?: { name: string; era: string; record: string } | null; runTotal?: { expected: number; stdev: number; mae?: number | null; lines: Array<{ line: number; overProb: number; underProb: number }> } | null; firstInningLead?: { homeLeadProb: number; awayLeadProb: number; holdoutAccuracy?: number | null } | null; playerProps?: { method: string; assumedAtBats: number; assumedStarterIP: number; homeHitters: Array<{ name: string; seasonAvg: number; hit1PlusProb: number; hit2PlusProb: number; hrProb: number }>; awayHitters: Array<{ name: string; seasonAvg: number; hit1PlusProb: number; hit2PlusProb: number; hrProb: number }>; homeStarterK: { name: string; seasonKPer9: number; expectedK: number; k5PlusProb: number; k7PlusProb: number } | null; awayStarterK: { name: string; seasonKPer9: number; expectedK: number; k5PlusProb: number; k7PlusProb: number } | null } | null; liveState?: 'scheduled' | 'live' | 'final' | 'cancelled'; statusInfo?: string; homeScore?: number | null; awayScore?: number | null; predictedAt?: string | null; isLocked?: boolean }>
   teamRanks: Array<{ rank: number; teamName: string; wins: number; losses: number; draws: number; winPct: string; gamesBack: string; last10: string; streak: string }>
   allHitters: Array<{ rank: number; playerName: string; teamName: string; avg: string; games: number; hits: number; homeRuns: number; rbi: number }>
   allPitchers: Array<{ rank: number; playerName: string; teamName: string; era: string; games: number; wins: number; losses: number; strikeOuts: number; whip: string }>
@@ -276,6 +276,7 @@ function MatchCard({ p, index }: { p: DashboardData['predictions'][number]; inde
           <span className="conf-pill">{p.confidence}</span>
           <span className="prob-pct">{p.winProbability}%</span>
         </div>
+        {p.isLocked && p.predictedAt && <LockedBadge predictedAt={p.predictedAt} />}
       </div>
 
       {p.runTotal && p.runTotal.lines.length > 0 && <RunTotalPanel runTotal={p.runTotal} />}
@@ -293,6 +294,22 @@ function MatchCard({ p, index }: { p: DashboardData['predictions'][number]; inde
         </ul>
       )}
     </article>
+  )
+}
+
+/* ═══════════════════════════════════════ */
+/* LOCKED BADGE — 예측 확정 시간 표시       */
+/* ═══════════════════════════════════════ */
+function LockedBadge({ predictedAt }: { predictedAt: string }) {
+  const d = new Date(predictedAt)
+  const time = Number.isNaN(d.getTime())
+    ? '—'
+    : new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false }).format(d)
+  return (
+    <div className="locked-badge" role="status" aria-label={`예측 확정 ${time}`}>
+      <span className="material-icons-round locked-icon">lock</span>
+      <span>예측 확정 {time}</span>
+    </div>
   )
 }
 

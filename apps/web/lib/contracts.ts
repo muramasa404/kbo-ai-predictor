@@ -61,6 +61,8 @@ export interface PredictionCardData {
   statusInfo?: string
   homeScore?: number | null
   awayScore?: number | null
+  predictedAt?: string | null
+  isLocked?: boolean
 }
 
 export interface MetricCardData {

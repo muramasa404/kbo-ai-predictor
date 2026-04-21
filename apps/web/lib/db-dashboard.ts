@@ -290,7 +290,20 @@ function buildPrediction(
     statusInfo: game.statusInfo,
     homeScore: game.homeScore,
     awayScore: game.awayScore,
+    predictedAt: ml?.predictedAt?.toISOString() ?? null,
+    isLocked: isLockedNow(game.scheduledAt),
   }
+}
+
+/** A prediction is considered locked once we're within 5 minutes of first
+ * pitch OR the game is already underway / finished. Matches the Python
+ * cron's T-5 lockout policy in train_model.py. */
+function isLockedNow(scheduledIso: string | undefined): boolean {
+  if (!scheduledIso) return false
+  const scheduled = new Date(scheduledIso).getTime()
+  if (Number.isNaN(scheduled)) return false
+  const now = Date.now()
+  return scheduled - now <= 5 * 60 * 1000
 }
 
 /** Pull the 10 most recent KBO game dates plus the actual calendar today (KST)
