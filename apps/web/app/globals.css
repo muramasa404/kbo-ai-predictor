@@ -86,26 +86,57 @@ body { overflow-x: hidden; }
 .tabbar-icon { font-size: 24px !important; }
 .tabbar-label { font-size: 10px; letter-spacing: -0.2px; font-weight: 600; }
 
-/* ═══ HERO — DESIGN.md Apple cinematic (black canvas + tight display hierarchy) ═══ */
+/* ═══ HERO — editorial brand identity (cinematic black canvas) ═══ */
 .hero-mobile {
-  margin: 0 -16px; padding: 44px 20px 32px;
+  position: relative;
+  margin: 0 -16px; padding: 48px 20px 28px;
   background: var(--black); color: var(--white);
   text-align: center;
+  overflow: hidden;
 }
-.logo-mark {
-  width: 60px; height: 60px; margin: 0 auto 16px;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 16px; background: var(--blue);
+/* Subtle radial vignette for depth (still matches DESIGN.md solid-black rule
+   — the radial is invisible on dark surfaces, only shapes the eye's focus). */
+.hero-mobile::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(
+    ellipse 120% 80% at 50% 0%,
+    rgba(0, 113, 227, 0.10) 0%,
+    rgba(0, 0, 0, 0) 62%
+  );
 }
-.logo-icon { font-size: 34px !important; color: #fff; }
-/* DESIGN.md: 56px display 600 weight, line-height 1.07, negative tracking.
-   Scaled down to 36px for mobile viewport. */
-.logo-text {
-  font-size: 36px; font-weight: 800; line-height: 1.07;
+.hero-mobile > * { position: relative; }
+
+/* Custom SVG diamond wordmark — replaces the round-blue-square + icon block */
+.brand-mark {
+  display: block; width: 36px; height: 36px;
+  margin: 0 auto 14px; color: rgba(255, 255, 255, 0.92);
+}
+
+.brand-wordmark {
+  display: inline-flex; align-items: baseline; gap: 12px;
+  font-weight: 800; line-height: 1.05;
   letter-spacing: var(--track-hero);
 }
-.hero-date { margin-top: 12px; font-size: 13px; color: rgba(255,255,255,0.55); font-weight: 500; letter-spacing: var(--track-caption); }
-.chip-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 16px; }
+.brand-kbo { font-size: 44px; color: #fff; }
+.brand-ai  { font-size: 22px; color: var(--blue); font-weight: 700; letter-spacing: 0.4px; }
+
+.brand-tagline {
+  margin-top: 4px;
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 5px; color: rgba(255, 255, 255, 0.55);
+  text-transform: uppercase;
+}
+.brand-rule {
+  width: 44px; height: 2px; margin: 14px auto 10px;
+  background: var(--blue); border-radius: 2px;
+}
+
+.hero-date {
+  font-size: 12px; font-weight: 500;
+  color: rgba(255,255,255,0.55);
+  letter-spacing: var(--track-caption);
+}
+.chip-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 12px; }
 .chip-sm {
   padding: 5px 12px; border-radius: var(--r-pill);
   border: 1px solid rgba(255,255,255,0.15);
@@ -155,6 +186,30 @@ body { overflow-x: hidden; }
   color: var(--text-3); letter-spacing: 0.6px;
 }
 
+/* Live / final score override the VS divider */
+.match-score {
+  margin-top: 2px; font-size: 22px; font-weight: 800;
+  color: var(--text-1); letter-spacing: var(--track-body);
+  font-variant-numeric: tabular-nums; line-height: 1.05;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.match-score-sep { color: var(--text-3); font-weight: 500; }
+
+/* Status strip pinned above the teams row */
+.match-status {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: var(--r-pill);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
+  margin-bottom: 10px;
+}
+.live-tag { background: rgba(255, 69, 58, 0.12); color: var(--red); }
+.live-tag .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); animation: pulse 1.4s infinite; }
+.final-tag { background: rgba(48, 209, 88, 0.12); color: var(--green); }
+.final-check { font-size: 12px !important; color: var(--green); }
+.cancelled-tag { background: rgba(0,0,0,0.06); color: var(--text-3); }
+
+.match-card.live { box-shadow: 0 0 0 1.5px rgba(255, 69, 58, 0.25), var(--shadow-apple); }
+
 .prob-section { margin-top: 14px; }
 .prob-bars { display: flex; height: 8px; border-radius: 980px; overflow: hidden; gap: 2px; }
 .prob-away-bar, .prob-home-bar { height: 100%; border-radius: 980px; transition: width 0.5s ease; }
@@ -164,6 +219,40 @@ body { overflow-x: hidden; }
 
 .starter-label { display: inline-flex; align-items: center; gap: 3px; margin-top: 2px; font-size: 11px; color: var(--text-3); font-weight: 500; letter-spacing: -0.2px; }
 .starter-icon { font-size: 12px !important; color: var(--blue); }
+
+/* ═══ v5.4 — Date picker (last-10-days pill strip) ═══ */
+.date-picker {
+  margin: 12px -16px 4px; padding: 10px 16px 2px;
+  overflow: hidden;
+}
+.date-picker-scroll {
+  display: flex; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  padding-bottom: 6px; scroll-snap-type: x mandatory;
+}
+.date-picker-scroll::-webkit-scrollbar { display: none; }
+.date-picker-scroll { scrollbar-width: none; }
+.date-pill {
+  flex: 0 0 auto; scroll-snap-align: start;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 8px 14px; min-width: 72px;
+  border: 1px solid rgba(0,0,0,0.08);
+  background: var(--white); border-radius: var(--r-pill);
+  font-family: inherit; cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  letter-spacing: var(--track-caption);
+}
+.date-pill-top { font-size: 13px; font-weight: 800; color: var(--text-1); font-variant-numeric: tabular-nums; }
+.date-pill-bot { font-size: 10px; font-weight: 500; color: var(--text-3); }
+.date-pill.finalised::after {
+  content: ''; width: 4px; height: 4px; border-radius: 50%;
+  background: var(--green); margin-top: 2px;
+}
+.date-pill.active {
+  background: var(--text-1); border-color: var(--text-1); transform: scale(1.02);
+}
+.date-pill.active .date-pill-top { color: var(--white); }
+.date-pill.active .date-pill-bot { color: rgba(255,255,255,0.65); }
 
 /* ═══ v5.3 — HCI Trust Strip (honest model accuracy) ═══ */
 .trust-strip {

@@ -19,11 +19,12 @@ interface DashboardData {
   date?: string
   hero: { title: string; copy: string; chips: string[] }
   modelTrust?: { sampleSize: number; accuracy: number | null; brierScore: number | null; windowLabel: string; modelVersion: string | null }
-  predictions: Array<{ id: string; gameTime: string; homeTeam: string; awayTeam: string; favoredTeam: string; winProbability: number; confidence: string; topReasons: string[]; homeStarter?: { name: string; era: string; record: string } | null; awayStarter?: { name: string; era: string; record: string } | null; runTotal?: { expected: number; stdev: number; mae?: number | null; lines: Array<{ line: number; overProb: number; underProb: number }> } | null; firstInningLead?: { homeLeadProb: number; awayLeadProb: number; holdoutAccuracy?: number | null } | null; playerProps?: { method: string; assumedAtBats: number; assumedStarterIP: number; homeHitters: Array<{ name: string; seasonAvg: number; hit1PlusProb: number; hit2PlusProb: number; hrProb: number }>; awayHitters: Array<{ name: string; seasonAvg: number; hit1PlusProb: number; hit2PlusProb: number; hrProb: number }>; homeStarterK: { name: string; seasonKPer9: number; expectedK: number; k5PlusProb: number; k7PlusProb: number } | null; awayStarterK: { name: string; seasonKPer9: number; expectedK: number; k5PlusProb: number; k7PlusProb: number } | null } | null }>
+  predictions: Array<{ id: string; gameTime: string; homeTeam: string; awayTeam: string; favoredTeam: string; winProbability: number; confidence: string; topReasons: string[]; homeStarter?: { name: string; era: string; record: string } | null; awayStarter?: { name: string; era: string; record: string } | null; runTotal?: { expected: number; stdev: number; mae?: number | null; lines: Array<{ line: number; overProb: number; underProb: number }> } | null; firstInningLead?: { homeLeadProb: number; awayLeadProb: number; holdoutAccuracy?: number | null } | null; playerProps?: { method: string; assumedAtBats: number; assumedStarterIP: number; homeHitters: Array<{ name: string; seasonAvg: number; hit1PlusProb: number; hit2PlusProb: number; hrProb: number }>; awayHitters: Array<{ name: string; seasonAvg: number; hit1PlusProb: number; hit2PlusProb: number; hrProb: number }>; homeStarterK: { name: string; seasonKPer9: number; expectedK: number; k5PlusProb: number; k7PlusProb: number } | null; awayStarterK: { name: string; seasonKPer9: number; expectedK: number; k5PlusProb: number; k7PlusProb: number } | null } | null; liveState?: 'scheduled' | 'live' | 'final' | 'cancelled'; statusInfo?: string; homeScore?: number | null; awayScore?: number | null }>
   teamRanks: Array<{ rank: number; teamName: string; wins: number; losses: number; draws: number; winPct: string; gamesBack: string; last10: string; streak: string }>
   allHitters: Array<{ rank: number; playerName: string; teamName: string; avg: string; games: number; hits: number; homeRuns: number; rbi: number }>
   allPitchers: Array<{ rank: number; playerName: string; teamName: string; era: string; games: number; wins: number; losses: number; strikeOuts: number; whip: string }>
   modelInfo: { version: string; description: string; accuracy: string; features: string[]; lastTrained: string }
+  availableDates?: Array<{ date: string; gameCount: number; hasResults: boolean; isToday: boolean }>
 }
 
 interface DbStatus {
@@ -41,6 +42,12 @@ const _day = _short.find((p) => p.type === 'day')?.value.replace('일', '') ?? '
 const _dow = _short.find((p) => p.type === 'weekday')?.value ?? ''
 const TODAY_SHORT = `${_month}/${_day} (${_dow})`
 
+function todayKstString(): string {
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date())
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>('home')
   const [data, setData] = useState<DashboardData | null>(null)
@@ -48,21 +55,32 @@ export default function App() {
   const [updatedAt, setUpdatedAt] = useState('')
   const [loading, setLoading] = useState(true)
   const [statsSegment, setStatsSegment] = useState<'hitters' | 'pitchers'>('hitters')
+  const [selectedDate, setSelectedDate] = useState<string>(() => todayKstString())
   const contentRef = useRef<HTMLDivElement>(null)
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (date?: string) => {
+    const d = date ?? selectedDate
     try {
-      const [dashRes, dbRes] = await Promise.all([fetch('/api/dashboard'), fetch('/api/db-status')])
+      const [dashRes, dbRes] = await Promise.all([
+        fetch(`/api/dashboard?date=${encodeURIComponent(d)}`),
+        fetch('/api/db-status'),
+      ])
       if (dashRes.ok) { setData(await dashRes.json()); setUpdatedAt(formatNow()) }
       if (dbRes.ok) setDbStatus(await dbRes.json())
     } catch { /* silent */ }
     setLoading(false)
-  }, [])
+  }, [selectedDate])
 
   useEffect(() => {
     refresh()
-    const id = setInterval(refresh, 5 * 60 * 1000)
+    const id = setInterval(() => refresh(), 5 * 60 * 1000)
     return () => clearInterval(id)
+  }, [refresh])
+
+  const onSelectDate = useCallback((iso: string) => {
+    setSelectedDate(iso)
+    void refresh(iso)
+    contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
   }, [refresh])
 
   // Norman: Constraints — scroll to top on tab change to prevent disorientation
@@ -90,7 +108,7 @@ export default function App() {
       </header>
 
       <main className="content" ref={contentRef}>
-        {tab === 'home' && data && <HomeTab data={data} />}
+        {tab === 'home' && data && <HomeTab data={data} selectedDate={selectedDate} onSelectDate={onSelectDate} />}
         {tab === 'rank' && data && <RankTab ranks={data.teamRanks} />}
         {tab === 'stats' && data && <StatsTab hitters={data.allHitters} pitchers={data.allPitchers} segment={statsSegment} setSegment={setStatsSegment} />}
         {tab === 'system' && <SystemTab db={dbStatus} model={data?.modelInfo} updatedAt={updatedAt} />}
@@ -116,20 +134,31 @@ export default function App() {
 /* ═══════════════════════════════════════ */
 /* HOME TAB                                */
 /* ═══════════════════════════════════════ */
-function HomeTab({ data }: { data: DashboardData }) {
+function HomeTab({ data, selectedDate, onSelectDate }: { data: DashboardData; selectedDate: string; onSelectDate: (iso: string) => void }) {
   return (
     <div className="fade-in">
       {/* Logo Hero — Norman: Visibility, brand identity first */}
       <section className="hero-mobile">
-        <div className="logo-mark">
-          <span className="material-icons-round logo-icon">sports_baseball</span>
-        </div>
-        <h1 className="logo-text">KBO AI<br />Predictor</h1>
+        <svg className="brand-mark" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+          <rect x="12" y="12" width="24" height="24" transform="rotate(45 24 24)"
+                stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+          <circle cx="24" cy="24" r="3.5" fill="#0071e3" />
+        </svg>
+        <h1 className="brand-wordmark">
+          <span className="brand-kbo">KBO</span>
+          <span className="brand-ai">AI</span>
+        </h1>
+        <p className="brand-tagline">PREDICTOR</p>
+        <div className="brand-rule" aria-hidden="true" />
         <p className="hero-date">{TODAY}</p>
         <div className="chip-row">
           {data.hero.chips.map((c) => <span key={c} className="chip-sm">{c}</span>)}
         </div>
       </section>
+
+      {data.availableDates && data.availableDates.length > 0 && (
+        <DatePicker dates={data.availableDates} selected={selectedDate} onSelect={onSelectDate} />
+      )}
 
       {data.modelTrust && <TrustStrip trust={data.modelTrust} />}
 
@@ -171,7 +200,25 @@ function HomeTab({ data }: { data: DashboardData }) {
 function MatchCard({ p, index }: { p: DashboardData['predictions'][number]; index: number }) {
   const [expanded, setExpanded] = useState(false)
   return (
-    <article className="match-card slide-up" style={{ animationDelay: `${index * 60}ms` }}>
+    <article className={`match-card slide-up ${p.liveState ?? 'scheduled'}`} style={{ animationDelay: `${index * 60}ms` }}>
+      {p.liveState === 'live' && (
+        <div className="match-status live-tag">
+          <span className="live-dot" />
+          <span>LIVE · {p.statusInfo || '경기중'}</span>
+        </div>
+      )}
+      {p.liveState === 'final' && (
+        <div className="match-status final-tag">
+          <span className="material-icons-round final-check">check_circle</span>
+          <span>경기 종료</span>
+        </div>
+      )}
+      {p.liveState === 'cancelled' && (
+        <div className="match-status cancelled-tag">
+          <span>{p.statusInfo || '취소 / 순연'}</span>
+        </div>
+      )}
+
       <div className="match-teams">
         <div className="match-team">
           <img src={getTeamLogo(p.awayTeam)} alt={p.awayTeam} className="logo-m" onError={hideImg} />
@@ -186,7 +233,10 @@ function MatchCard({ p, index }: { p: DashboardData['predictions'][number]; inde
         <div className="match-center">
           <span className="match-center-date">{TODAY_SHORT}</span>
           <span className="match-center-time">{p.gameTime}</span>
-          <span className="match-vs-label">VS</span>
+          {p.liveState === 'live' || p.liveState === 'final'
+            ? <span className="match-score">{p.awayScore ?? 0} <span className="match-score-sep">:</span> {p.homeScore ?? 0}</span>
+            : <span className="match-vs-label">VS</span>
+          }
         </div>
         <div className="match-team">
           <img src={getTeamLogo(p.homeTeam)} alt={p.homeTeam} className="logo-m" onError={hideImg} />
@@ -227,6 +277,40 @@ function MatchCard({ p, index }: { p: DashboardData['predictions'][number]; inde
         </ul>
       )}
     </article>
+  )
+}
+
+/* ═══════════════════════════════════════ */
+/* DATE PICKER — last-10-days pill strip   */
+/* ═══════════════════════════════════════ */
+type AvailableDate = NonNullable<DashboardData['availableDates']>[number]
+function DatePicker({ dates, selected, onSelect }: { dates: AvailableDate[]; selected: string; onSelect: (iso: string) => void }) {
+  return (
+    <nav className="date-picker" aria-label="경기 날짜 선택">
+      <div className="date-picker-scroll">
+        {dates.map((d) => {
+          const parts = d.date.split('-')
+          const mm = parts[1]?.replace(/^0/, '')
+          const dd = parts[2]?.replace(/^0/, '')
+          const dow = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', weekday: 'short' }).format(new Date(d.date + 'T09:00:00+09:00'))
+          const active = d.date === selected
+          return (
+            <button
+              key={d.date}
+              type="button"
+              className={`date-pill ${active ? 'active' : ''} ${d.hasResults ? 'finalised' : ''}`}
+              onClick={() => onSelect(d.date)}
+              aria-pressed={active}
+            >
+              <span className="date-pill-top">{d.isToday ? '오늘' : `${mm}/${dd}`}</span>
+              <span className="date-pill-bot">
+                {d.isToday ? `${mm}/${dd} (${dow})` : `(${dow}) · ${d.gameCount}경기`}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </nav>
   )
 }
 

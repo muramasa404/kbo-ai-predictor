@@ -134,6 +134,7 @@ export async function getDashboardPayloadFromDb(date: string): Promise<FullDashb
       whip: p.whip ? String(p.whip) : '-',
     })),
     modelTrust: computeModelTrust(trustRows),
+    availableDates: await fetchAvailableDates(date),
     modelInfo: {
       version: MODEL_VERSION,
       description: 'XGBoost(200 trees, depth 5) — 매시간 GitHub Actions가 Naver에서 2025~2026 KBO 완료경기 결과를 수집해 Supabase에 적재하고, 실제 경기 W/L 라벨로 재학습합니다. 오늘 경기는 Naver 실시간 일정 + 발표된 선발투수 ERA를 피처에 반영해 predict_proba 추론합니다.',
@@ -285,6 +286,57 @@ function buildPrediction(
     runTotal: usingMl ? extractRunTotal(ml?.extrasJson) : null,
     firstInningLead: usingMl ? extractFirstInningLead(ml?.extrasJson) : null,
     playerProps: usingMl ? extractPlayerProps(ml?.extrasJson) : null,
+    liveState: mapLiveState(game.status),
+    statusInfo: game.statusInfo,
+    homeScore: game.homeScore,
+    awayScore: game.awayScore,
+  }
+}
+
+/** Pull the 10 most recent KBO game dates (today always first) plus today's
+ * date if it isn't yet in the DB (e.g. no games finalised yet). Includes the
+ * game count per date and whether every game has a GameResult. */
+async function fetchAvailableDates(currentDate: string) {
+  type Row = { gameDate: Date | null; game_count: bigint | number; result_count: bigint | number }
+  const rows = (await prisma.$queryRaw<Row[]>`
+    SELECT g."gameDate" AS "gameDate",
+           COUNT(*) AS game_count,
+           COUNT(gr.id) AS result_count
+    FROM "Game" g
+    LEFT JOIN "GameResult" gr ON gr."gameId" = g.id
+    WHERE g."sourceGameKey" NOT LIKE 'auto_%' AND g."sourceGameKey" NOT LIKE 'ml_%'
+    GROUP BY g."gameDate"
+    ORDER BY g."gameDate" DESC
+    LIMIT 10
+  `)
+  const dates = rows.map((r) => {
+    const d = r.gameDate ? new Date(r.gameDate) : new Date()
+    const iso = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(d)
+    const gameCount = Number(r.game_count ?? 0)
+    const resultCount = Number(r.result_count ?? 0)
+    return {
+      date: iso,
+      gameCount,
+      hasResults: resultCount > 0 && resultCount === gameCount,
+      isToday: iso === currentDate,
+    }
+  })
+  // Ensure today is always present (even if DB hasn't upserted yet)
+  if (!dates.some((d) => d.isToday)) {
+    dates.unshift({ date: currentDate, gameCount: 0, hasResults: false, isToday: true })
+    if (dates.length > 10) dates.pop()
+  }
+  return dates
+}
+
+function mapLiveState(raw: string | undefined): 'scheduled' | 'live' | 'final' | 'cancelled' {
+  switch (raw) {
+    case 'STARTED': return 'live'
+    case 'RESULT':  return 'final'
+    case 'CANCEL': case 'CANCELLED': case 'POSTPONED': return 'cancelled'
+    default: return 'scheduled'
   }
 }
 

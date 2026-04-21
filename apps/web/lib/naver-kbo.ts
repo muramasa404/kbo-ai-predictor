@@ -123,7 +123,10 @@ async function enrichGame(g: RawNaverGame): Promise<NaverKboGame> {
   return {
     gameId: g.gameId,
     date: g.gameDate,
-    scheduledAt: g.gameDateTime,
+    // Naver returns the local KST time without a timezone suffix
+    // (e.g. "2026-04-21T18:30:00"). Append +09:00 so JS Date doesn't
+    // misinterpret it as UTC and shift the displayed time by 9 hours.
+    scheduledAt: ensureKstSuffix(g.gameDateTime),
     status: g.statusCode,
     statusInfo: g.statusInfo ?? '',
     homeTeamCode: g.homeTeamCode,
@@ -286,6 +289,13 @@ function parseHeadToHead(raw: RawHeadToHead | undefined, homeCode: string | unde
 }
 
 function toInt(v: unknown): number { const n = Number(v); return Number.isFinite(n) ? n : 0 }
+
+function ensureKstSuffix(iso: string | undefined): string {
+  if (!iso) return ''
+  // If the timestamp already carries a Z or ±HH:MM suffix, leave it alone.
+  if (/(Z|[+-]\d{2}:?\d{2})$/.test(iso)) return iso
+  return `${iso}+09:00`
+}
 
 /* ───────── Internal raw shapes ───────── */
 interface RawNaverGame {

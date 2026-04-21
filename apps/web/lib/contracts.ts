@@ -57,6 +57,10 @@ export interface PredictionCardData {
   runTotal?: RunTotalPrediction | null
   firstInningLead?: FirstInningLeadPrediction | null
   playerProps?: PlayerPropsPayload | null
+  liveState?: 'scheduled' | 'live' | 'final' | 'cancelled'
+  statusInfo?: string
+  homeScore?: number | null
+  awayScore?: number | null
 }
 
 export interface MetricCardData {
@@ -91,6 +95,13 @@ export interface ModelTrust {
   modelVersion: string | null
 }
 
+export interface AvailableDate {
+  date: string                // YYYY-MM-DD (KST)
+  gameCount: number
+  hasResults: boolean
+  isToday: boolean
+}
+
 export interface DashboardPayload {
   date: string
   hero: {
@@ -103,4 +114,5 @@ export interface DashboardPayload {
   rankings: RankingCardData[]
   details: DetailCardData[]
   modelTrust?: ModelTrust
+  availableDates?: AvailableDate[]
 }
