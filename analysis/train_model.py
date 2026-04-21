@@ -164,11 +164,36 @@ def collect_historical_games(cur, team_id_by_name: dict[str, str]) -> int:
     GameResult for every completed KBO game. Day-granularity queries are
     required: Naver's /schedule/games API returns incomplete or stale data
     when called with wide date ranges, but returns the full slate (~5 games
-    with correct RESULT status + scores) when called with fromDate==toDate."""
+    with correct RESULT status + scores) when called with fromDate==toDate.
+
+    Fast-path: pre-load the set of dates that already have *every* game
+    backfilled (GameResult populated AND firstInning scores populated). Skip
+    those dates entirely — zero Naver calls. First run is slow; subsequent
+    hourly runs only touch the last ~1-2 days."""
     import time
     total_written = 0
     total_requests = 0
+    skipped_days = 0
     today_date = datetime.now(KST).date()
+
+    # Pre-compute fully-backfilled dates (game count matches count with both
+    # homeScore and firstInningHomeScore set). Any day already fully complete
+    # never gets re-hit over HTTP.
+    cur.execute(
+        '''SELECT g."gameDate"::date,
+                  COUNT(*) AS total,
+                  COUNT(*) FILTER (WHERE gr."homeScore" IS NOT NULL
+                                      AND gr."firstInningHomeScore" IS NOT NULL) AS ready
+           FROM "Game" g
+           LEFT JOIN "GameResult" gr ON gr."gameId" = g.id
+           WHERE g.status = 'FINAL'
+           GROUP BY g."gameDate"::date'''
+    )
+    days_complete: set = set()
+    for d, total, ready in cur.fetchall():
+        if total > 0 and total == ready:
+            days_complete.add(d)
+    print(f'Fast-path: {len(days_complete)} date(s) already fully backfilled (will skip)', flush=True)
 
     for year in HISTORY_YEARS:
         season_id = ensure_season(cur, year)
@@ -180,6 +205,11 @@ def collect_historical_games(cur, team_id_by_name: dict[str, str]) -> int:
         cursor_date = year_start
         year_written = 0
         while cursor_date <= year_end:
+            # Fast-path skip: day is fully backfilled — no HTTP call
+            if cursor_date in days_complete:
+                skipped_days += 1
+                cursor_date += timedelta(days=1)
+                continue
             date_str = cursor_date.strftime('%Y-%m-%d')
             games = fetch_naver_range(date_str, date_str)
             total_requests += 1
@@ -257,8 +287,9 @@ def collect_historical_games(cur, team_id_by_name: dict[str, str]) -> int:
             cursor_date += timedelta(days=1)
 
         conn.commit()
-        print(f'  {year} season complete: {year_written} games')
+        print(f'  {year} season complete: {year_written} games', flush=True)
 
+    print(f'Skipped {skipped_days} fully-backfilled day(s) — saved {skipped_days * 6} HTTP calls', flush=True)
     return total_written
 
 
