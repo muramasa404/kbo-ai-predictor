@@ -592,9 +592,20 @@ conn = psycopg2.connect(_sanitize_dsn(DATABASE_URL))
 conn.autocommit = False
 cur = conn.cursor()
 
-# v5.3: ensure extrasJson column exists on Prediction (idempotent)
-cur.execute('''ALTER TABLE "Prediction" ADD COLUMN IF NOT EXISTS "extrasJson" JSONB''')
-conn.commit()
+# v5.3: ensure extrasJson column exists on Prediction (idempotent — best effort).
+# Supabase's kbo_app role doesn't own the Prediction table, so ALTER TABLE will
+# be rejected with InsufficientPrivilege. That's fine — we apply schema changes
+# out-of-band via the Supabase SQL editor / MCP. Warn and continue if the role
+# can't ALTER, so CI doesn't block on a no-op.
+try:
+    cur.execute('''ALTER TABLE "Prediction" ADD COLUMN IF NOT EXISTS "extrasJson" JSONB''')
+    conn.commit()
+except psycopg2.errors.InsufficientPrivilege:
+    conn.rollback()
+    print('[schema] Skipping ALTER TABLE "Prediction" (role lacks OWNER; column must exist already)', flush=True)
+except psycopg2.Error as e:
+    conn.rollback()
+    print(f'[schema] ALTER TABLE failed ({e.__class__.__name__}): {e}', flush=True)
 
 cur.execute('SELECT id, "nameKo" FROM "Team"')
 team_id_by_name = {name: tid for tid, name in cur.fetchall()}
