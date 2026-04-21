@@ -129,37 +129,47 @@ def ensure_season(cur, year: int) -> str:
 
 
 def collect_historical_games(cur, team_id_by_name: dict[str, str]) -> int:
-    """Iterate past dates for each configured season, upsert Game + GameResult
-    for every completed KBO game Naver has a result for."""
+    """Iterate past dates day-by-day for each configured season, upsert Game +
+    GameResult for every completed KBO game. Day-granularity queries are
+    required: Naver's /schedule/games API returns incomplete or stale data
+    when called with wide date ranges, but returns the full slate (~5 games
+    with correct RESULT status + scores) when called with fromDate==toDate."""
+    import time
     total_written = 0
+    total_requests = 0
     today_date = datetime.now(KST).date()
 
     for year in HISTORY_YEARS:
         season_id = ensure_season(cur, year)
-        # KBO regular season typically runs April → October
         year_start = datetime(year, 3, 15).date()
         year_end = min(datetime(year, 11, 15).date(), today_date)
         if year_start > today_date:
             continue
 
         cursor_date = year_start
-        step = timedelta(days=14)  # 2-week chunks
+        year_written = 0
         while cursor_date <= year_end:
-            chunk_end = min(cursor_date + step - timedelta(days=1), year_end)
-            games = fetch_naver_range(cursor_date.strftime('%Y-%m-%d'), chunk_end.strftime('%Y-%m-%d'))
+            date_str = cursor_date.strftime('%Y-%m-%d')
+            games = fetch_naver_range(date_str, date_str)
+            total_requests += 1
 
             for g in games:
-                if g.get('statusCode') != 'RESULT':
-                    continue  # skip not-completed games
+                # Keep games with RESULT status OR non-zero score (Naver occasionally
+                # leaves historical games as BEFORE but still records the score)
+                h_score = g.get('homeTeamScore')
+                a_score = g.get('awayTeamScore')
+                status = g.get('statusCode')
+                has_score = (h_score or 0) + (a_score or 0) > 0
+                is_past = cursor_date < today_date
+                if not (status == 'RESULT' or (is_past and has_score)):
+                    continue
                 home_name = g.get('homeTeamName')
                 away_name = g.get('awayTeamName')
                 if home_name not in team_id_by_name or away_name not in team_id_by_name:
                     continue
-                h_score = g.get('homeTeamScore')
-                a_score = g.get('awayTeamScore')
                 if h_score is None or a_score is None:
                     continue
-                # Upsert Game
+
                 scheduled_at = g.get('gameDateTime')
                 cur.execute(
                     '''INSERT INTO "Game" (id, "sourceGameKey", "seasonId", "gameDate", "gameType",
@@ -192,8 +202,18 @@ def collect_historical_games(cur, team_id_by_name: dict[str, str]) -> int:
                      winner, loser, is_draw, scheduled_at),
                 )
                 total_written += 1
+                year_written += 1
 
-            cursor_date = chunk_end + timedelta(days=1)
+            # Commit every 30 days to avoid losing progress on long runs
+            if total_requests % 30 == 0:
+                conn.commit()
+                print(f'  ...{date_str}: {year_written} games for {year} so far (total {total_written})')
+            # Polite throttle — Naver tolerates this fine, avoids bursts
+            time.sleep(0.05)
+            cursor_date += timedelta(days=1)
+
+        conn.commit()
+        print(f'  {year} season complete: {year_written} games')
 
     return total_written
 
