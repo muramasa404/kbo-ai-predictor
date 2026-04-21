@@ -107,6 +107,12 @@ const HEADERS = {
   Accept: 'application/json',
 }
 
+function todayKstIso(): string {
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date())
+}
+
 export async function fetchKboGamesForDate(date: string): Promise<NaverKboGame[]> {
   const url = `${SCHEDULE_URL}?fields=basic&upperCategoryId=kbaseball&fromDate=${date}&toDate=${date}`
   const res = await fetch(url, { headers: HEADERS, cache: 'no-store' })
@@ -115,7 +121,39 @@ export async function fetchKboGamesForDate(date: string): Promise<NaverKboGame[]
   const all = json.result?.games ?? []
   const kbo = all.filter((g) => g.categoryId === 'kbo')
 
-  return Promise.all(kbo.map((g) => enrichGame(g)))
+  // Past dates are frozen — final scores are already in the schedule
+  // response, so we skip the per-game preview fetch (5+ extra HTTP calls)
+  // that would only matter for upcoming games. Today / future still gets the
+  // full starter + h2h + lineup enrichment.
+  const skipPreview = date < todayKstIso()
+  return Promise.all(kbo.map((g) => skipPreview ? shallowEnrich(g) : enrichGame(g)))
+}
+
+function shallowEnrich(g: RawNaverGame): NaverKboGame {
+  return {
+    gameId: g.gameId,
+    date: g.gameDate,
+    scheduledAt: ensureKstSuffix(g.gameDateTime),
+    status: g.statusCode,
+    statusInfo: g.statusInfo ?? '',
+    homeTeamCode: g.homeTeamCode,
+    homeTeamName: g.homeTeamName,
+    awayTeamCode: g.awayTeamCode,
+    awayTeamName: g.awayTeamName,
+    homeScore: g.homeTeamScore ?? 0,
+    awayScore: g.awayTeamScore ?? 0,
+    homeStarter: null,
+    awayStarter: null,
+    homeStandings: null,
+    awayStandings: null,
+    homeTopPlayer: null,
+    awayTopPlayer: null,
+    homePreviousGames: [],
+    awayPreviousGames: [],
+    homeLineup: [],
+    awayLineup: [],
+    headToHead: null,
+  }
 }
 
 async function enrichGame(g: RawNaverGame): Promise<NaverKboGame> {

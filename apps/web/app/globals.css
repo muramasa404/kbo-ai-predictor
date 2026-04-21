@@ -11,6 +11,7 @@
   --text-2: rgba(0, 0, 0, 0.65);
   --text-3: rgba(0, 0, 0, 0.38);
   --green: #30d158;
+  --mint: #4ee3c3;
   --red: #ff453a;
   --gold: #ffd60a;
   --gold-bg: rgba(255, 214, 10, 0.08);
@@ -45,8 +46,27 @@ body { overflow-x: hidden; }
 /* ═══ APP SHELL ═══ */
 .app { min-height: 100dvh; display: flex; flex-direction: column; }
 .content { flex: 1; overflow-y: auto; padding: 0 16px 88px; }
-.loader { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100dvh; gap: 12px; color: var(--text-3); font-size: 14px; }
-.spinner { width: 28px; height: 28px; border: 3px solid #e0e0e0; border-top-color: var(--blue); border-radius: 50%; animation: spin 0.7s linear infinite; }
+/* DESIGN.md loading moment — cinematic full-screen black, wordmark pulse + dot ellipsis */
+.loader {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 22px;
+  background: var(--black); color: var(--white);
+  animation: loaderFade 0.3s ease both;
+}
+.loader-brand { animation: loaderPulse 1.8s ease-in-out infinite; }
+.loader-dots { display: flex; gap: 6px; }
+.loader-dots span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: rgba(255,255,255,0.5);
+  animation: loaderDot 1.2s ease-in-out infinite;
+}
+.loader-dots span:nth-child(2) { animation-delay: 0.16s; }
+.loader-dots span:nth-child(3) { animation-delay: 0.32s; }
+
+@keyframes loaderFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes loaderPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+@keyframes loaderDot { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.35; } 40% { transform: scale(1); opacity: 1; } }
 
 /* ═══ STATUS BAR ═══ */
 /* DESIGN.md glass nav: translucent dark + saturated blur */
@@ -86,62 +106,45 @@ body { overflow-x: hidden; }
 .tabbar-icon { font-size: 24px !important; }
 .tabbar-label { font-size: 10px; letter-spacing: -0.2px; font-weight: 600; }
 
-/* ═══ HERO — editorial brand identity (cinematic black canvas) ═══ */
+/* ═══ HERO — compact brand bar (KBO.AI wordmark, mint .AI accent) ═══ */
 .hero-mobile {
   position: relative;
-  margin: 0 -16px; padding: 48px 20px 28px;
+  margin: 0 -16px; padding: 22px 20px 18px;
   background: var(--black); color: var(--white);
   text-align: center;
   overflow: hidden;
 }
-/* Subtle radial vignette for depth (still matches DESIGN.md solid-black rule
-   — the radial is invisible on dark surfaces, only shapes the eye's focus). */
 .hero-mobile::before {
   content: ''; position: absolute; inset: 0; pointer-events: none;
   background: radial-gradient(
     ellipse 120% 80% at 50% 0%,
-    rgba(0, 113, 227, 0.10) 0%,
-    rgba(0, 0, 0, 0) 62%
+    rgba(48, 209, 88, 0.08) 0%,
+    rgba(0, 0, 0, 0) 70%
   );
 }
 .hero-mobile > * { position: relative; }
 
-/* Custom SVG diamond wordmark — replaces the round-blue-square + icon block */
-.brand-mark {
-  display: block; width: 36px; height: 36px;
-  margin: 0 auto 14px; color: rgba(255, 255, 255, 0.92);
-}
-
+/* Wordmark: "KBO" and ".AI" share size/weight — only color diverges */
 .brand-wordmark {
-  display: inline-flex; align-items: baseline; gap: 12px;
-  font-weight: 800; line-height: 1.05;
-  letter-spacing: var(--track-hero);
+  font-weight: 900; font-size: 38px; line-height: 1.05;
+  letter-spacing: -0.6px;
 }
-.brand-kbo { font-size: 44px; color: #fff; }
-.brand-ai  { font-size: 22px; color: var(--blue); font-weight: 700; letter-spacing: 0.4px; }
+.brand-kbo { color: #fff; }
+.brand-ai  { color: var(--mint, #4ee3c3); }
 
 .brand-tagline {
-  margin-top: 4px;
-  font-size: 10px; font-weight: 700;
-  letter-spacing: 5px; color: rgba(255, 255, 255, 0.55);
+  margin-top: 2px;
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 5px; color: rgba(255, 255, 255, 0.48);
   text-transform: uppercase;
 }
-.brand-rule {
-  width: 44px; height: 2px; margin: 14px auto 10px;
-  background: var(--blue); border-radius: 2px;
-}
 
-.hero-date {
-  font-size: 12px; font-weight: 500;
-  color: rgba(255,255,255,0.55);
+.hero-updated {
+  margin-top: 6px;
+  font-size: 11px; font-weight: 500;
+  color: rgba(255, 255, 255, 0.40);
   letter-spacing: var(--track-caption);
-}
-.chip-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 12px; }
-.chip-sm {
-  padding: 5px 12px; border-radius: var(--r-pill);
-  border: 1px solid rgba(255,255,255,0.15);
-  font-size: 11px; color: rgba(255,255,255,0.65); font-weight: 500;
-  letter-spacing: var(--track-micro);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ═══ SECTIONS ═══ */
@@ -220,21 +223,20 @@ body { overflow-x: hidden; }
 .starter-label { display: inline-flex; align-items: center; gap: 3px; margin-top: 2px; font-size: 11px; color: var(--text-3); font-weight: 500; letter-spacing: -0.2px; }
 .starter-icon { font-size: 12px !important; color: var(--blue); }
 
-/* ═══ v5.4 — Date picker (last-10-days pill strip) ═══ */
+/* ═══ v5.4 — Date picker (compact last-10-days pill strip) ═══ */
 .date-picker {
-  margin: 12px -16px 4px; padding: 10px 16px 2px;
-  overflow: hidden;
+  margin: 6px -16px 2px; padding: 4px 16px 0;
 }
 .date-picker-scroll {
-  display: flex; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch;
-  padding-bottom: 6px; scroll-snap-type: x mandatory;
+  display: flex; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  padding: 2px 0 4px; scroll-snap-type: x mandatory;
+  scrollbar-width: none;
 }
 .date-picker-scroll::-webkit-scrollbar { display: none; }
-.date-picker-scroll { scrollbar-width: none; }
 .date-pill {
   flex: 0 0 auto; scroll-snap-align: start;
-  display: flex; flex-direction: column; align-items: center; gap: 1px;
-  padding: 8px 14px; min-width: 72px;
+  display: flex; flex-direction: column; align-items: center; gap: 0;
+  padding: 5px 12px; min-width: 60px; line-height: 1.15;
   border: 1px solid rgba(0,0,0,0.08);
   background: var(--white); border-radius: var(--r-pill);
   font-family: inherit; cursor: pointer;
@@ -242,10 +244,10 @@ body { overflow-x: hidden; }
   -webkit-tap-highlight-color: transparent;
   letter-spacing: var(--track-caption);
 }
-.date-pill-top { font-size: 13px; font-weight: 800; color: var(--text-1); font-variant-numeric: tabular-nums; }
-.date-pill-bot { font-size: 10px; font-weight: 500; color: var(--text-3); }
+.date-pill-top { font-size: 12px; font-weight: 800; color: var(--text-1); font-variant-numeric: tabular-nums; }
+.date-pill-bot { font-size: 9px; font-weight: 500; color: var(--text-3); margin-top: 1px; }
 .date-pill.finalised::after {
-  content: ''; width: 4px; height: 4px; border-radius: 50%;
+  content: ''; width: 3px; height: 3px; border-radius: 50%;
   background: var(--green); margin-top: 2px;
 }
 .date-pill.active {

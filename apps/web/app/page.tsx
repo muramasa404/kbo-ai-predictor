@@ -93,8 +93,12 @@ export default function App() {
   if (loading) {
     return (
       <div className="loader">
-        <div className="spinner" />
-        <p>데이터를 불러오는 중...</p>
+        <h1 className="brand-wordmark loader-brand">
+          <span className="brand-kbo">KBO</span><span className="brand-ai">.AI</span>
+        </h1>
+        <div className="loader-dots" aria-label="로딩 중">
+          <span /><span /><span />
+        </div>
       </div>
     )
   }
@@ -108,7 +112,7 @@ export default function App() {
       </header>
 
       <main className="content" ref={contentRef}>
-        {tab === 'home' && data && <HomeTab data={data} selectedDate={selectedDate} onSelectDate={onSelectDate} />}
+        {tab === 'home' && data && <HomeTab data={data} selectedDate={selectedDate} onSelectDate={onSelectDate} updatedAt={updatedAt} />}
         {tab === 'rank' && data && <RankTab ranks={data.teamRanks} />}
         {tab === 'stats' && data && <StatsTab hitters={data.allHitters} pitchers={data.allPitchers} segment={statsSegment} setSegment={setStatsSegment} />}
         {tab === 'system' && <SystemTab db={dbStatus} model={data?.modelInfo} updatedAt={updatedAt} />}
@@ -134,26 +138,16 @@ export default function App() {
 /* ═══════════════════════════════════════ */
 /* HOME TAB                                */
 /* ═══════════════════════════════════════ */
-function HomeTab({ data, selectedDate, onSelectDate }: { data: DashboardData; selectedDate: string; onSelectDate: (iso: string) => void }) {
+function HomeTab({ data, selectedDate, onSelectDate, updatedAt }: { data: DashboardData; selectedDate: string; onSelectDate: (iso: string) => void; updatedAt: string }) {
   return (
     <div className="fade-in">
       {/* Logo Hero — Norman: Visibility, brand identity first */}
       <section className="hero-mobile">
-        <svg className="brand-mark" viewBox="0 0 48 48" fill="none" aria-hidden="true">
-          <rect x="12" y="12" width="24" height="24" transform="rotate(45 24 24)"
-                stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-          <circle cx="24" cy="24" r="3.5" fill="#0071e3" />
-        </svg>
         <h1 className="brand-wordmark">
-          <span className="brand-kbo">KBO</span>
-          <span className="brand-ai">AI</span>
+          <span className="brand-kbo">KBO</span><span className="brand-ai">.AI</span>
         </h1>
         <p className="brand-tagline">PREDICTOR</p>
-        <div className="brand-rule" aria-hidden="true" />
-        <p className="hero-date">{TODAY}</p>
-        <div className="chip-row">
-          {data.hero.chips.map((c) => <span key={c} className="chip-sm">{c}</span>)}
-        </div>
+        <p className="hero-updated">Updated at {updatedAt}</p>
       </section>
 
       {data.availableDates && data.availableDates.length > 0 && (
