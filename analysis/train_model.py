@@ -867,6 +867,36 @@ for g in today_games:
     )
     db_game_id = cur.fetchone()[0]
 
+    # ─────────────────────────────────────────────────────────────────────
+    # T-5 LOCKOUT: once a game is within 5 minutes of first pitch (or has
+    # already started), its prediction is frozen. The cron only overwrites
+    # when there's still meaningful lead time — after that the user sees
+    # the same locked probability throughout the game so model trust isn't
+    # eroded by reading live state back into the forecast.
+    # ─────────────────────────────────────────────────────────────────────
+    try:
+        sched_dt = datetime.fromisoformat(scheduled_at).replace(tzinfo=KST) if scheduled_at else None
+    except ValueError:
+        sched_dt = None
+    now_kst = datetime.now(KST)
+    minutes_until_start = ((sched_dt - now_kst).total_seconds() / 60) if sched_dt else None
+
+    if minutes_until_start is not None and minutes_until_start <= 5:
+        cur.execute(
+            '''SELECT 1 FROM "Prediction"
+               WHERE "gameId" = %s AND "predictedAt"::date = CURRENT_DATE
+               LIMIT 1''',
+            (db_game_id,),
+        )
+        if cur.fetchone():
+            print(
+                f'  {away_name} @ {home_name}: LOCKED '
+                f'(starts in {minutes_until_start:+.1f} min — keeping existing prediction)',
+                flush=True,
+            )
+            continue
+        # no prior row but game is inside the window — write a final one now
+
     cur.execute(
         '''DELETE FROM "Prediction" WHERE "gameId" = %s AND "predictedAt"::date = CURRENT_DATE''',
         (db_game_id,),
